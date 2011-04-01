@@ -54,7 +54,8 @@ module ActiveMerchant #:nodoc:
       CIM_TRANSACTION_TYPES = {
         :auth_capture => 'profileTransAuthCapture',
         :auth_only => 'profileTransAuthOnly',
-        :capture_only => 'profileTransCaptureOnly'
+        :capture_only => 'profileTransCaptureOnly',
+        :refund => 'profileTransRefund'
       }
 
       CIM_VALIDATION_MODES = {
@@ -309,10 +310,12 @@ module ActiveMerchant #:nodoc:
       #
       # ==== Transaction
       #
-      # * <tt>:type</tt> -- The type of transaction. Can be either <tt>:auth_only</tt>, <tt>:capture_only</tt>, or <tt>:auth_capture</tt>. (REQUIRED)
+      # * <tt>:type</tt> -- The type of transaction. Can be either <tt>:auth_only</tt>, <tt>:capture_only</tt>, <tt>:auth_capture</tt>, or <tt>:refund</tt>. (REQUIRED)
       # * <tt>:amount</tt> -- The amount for the tranaction. Formatted with a decimal. For example "4.95" (REQUIRED)
       # * <tt>:customer_profile_id</tt> -- The Customer Profile ID of the customer to use in this transaction. (REQUIRED)
       # * <tt>:customer_payment_profile_id</tt> -- The Customer Payment Profile ID of the Customer Payment Profile to use in this transaction. (REQUIRED)
+      # * <tt>:verification_value</tt> -- The Card Code to be sent with the transaction. Only required if you would like to use the Card Code Verification (CCV) security feature. 
+      # * <tt>:transaction_id</tt> -- The gateway-returned transaction ID for the transaction against which a refund is to be made. (REQUIRED FOR REFUND)
       def create_customer_profile_transaction(options)
         requires!(options, :transaction)
         requires!(options[:transaction], :type, :amount, :customer_profile_id, :customer_payment_profile_id)
@@ -330,6 +333,7 @@ module ActiveMerchant #:nodoc:
       # * <tt>:customer_profile_id</tt> -- The Customer Profile ID of the customer to use in this transaction. (REQUIRED)
       # * <tt>:customer_payment_profile_id</tt> -- The Customer Payment Profile ID of the Customer Payment Profile to be verified. (REQUIRED)
       # * <tt>:customer_address_id</tt> -- The Customer Address ID of the Customer Shipping Address to be verified.
+      # * <tt>:verification_value</tt> -- The Card Code to be verified with the request. Only required if you would like to use the Card Code Verification (CCV) security feature. 
       # * <tt>:validation_mode</tt> -- <tt>:live</tt> or <tt>:test</tt> In Test Mode, only field validation is performed. 
       #   In Live Mode, a transaction is generated and submitted to the processor with the amount of $0.01. If successful, the transaction is immediately voided. (REQUIRED)
       def validate_customer_payment_profile(options)
@@ -371,6 +375,8 @@ module ActiveMerchant #:nodoc:
       def build_create_customer_profile_request(xml, options)
         add_profile(xml, options[:profile])
 
+        xml.tag!('validationMode', CIM_VALIDATION_MODES[options[:validation_mode]]) if options[:validation_mode]
+        
         xml.target!
       end
 
@@ -443,6 +449,8 @@ module ActiveMerchant #:nodoc:
           add_payment_profile(xml, options[:payment_profile]) 
         end
 
+        xml.tag!('validationMode', CIM_VALIDATION_MODES[options[:validation_mode]]) if options[:validation_mode]
+
         xml.target!
       end
 
@@ -466,6 +474,7 @@ module ActiveMerchant #:nodoc:
         xml.tag!('customerProfileId', options[:customer_profile_id])
         xml.tag!('customerPaymentProfileId', options[:customer_payment_profile_id])
         xml.tag!('customerShippingAddressId', options[:customer_address_id]) if options[:customer_address_id]
+        xml.tag!('cardCode', options[:verification_value]) if options[:verification_value]
         xml.tag!('validationMode', CIM_VALIDATION_MODES[options[:validation_mode]]) if options[:validation_mode]
 
         xml.target!
@@ -506,6 +515,8 @@ module ActiveMerchant #:nodoc:
             xml.tag!('customerPaymentProfileId', transaction[:customer_payment_profile_id])
             xml.tag!('approvalCode', transaction[:approval_code]) if transaction[:type] == :capture_only
             add_order(xml, transaction[:order]) if transaction[:order]
+            xml.tag!('transId', transaction[:transaction_id]) if transaction[:type] == :refund
+            xml.tag!('cardCode', transaction[:verification_value]) if transaction[:verification_value]
           end
         end
       end
@@ -630,8 +641,9 @@ module ActiveMerchant #:nodoc:
       
       def commit(action, request)
         url = test? ? test_url : live_url
+        # warn "CIM commit request #{request}"
         xml = ssl_post(url, request, "Content-Type" => "text/xml")
-        
+        # warn "CIM commit results #{xml}"
         response_params = parse(action, xml)
 
         message = response_params['messages']['message']['text']
@@ -659,7 +671,10 @@ module ActiveMerchant #:nodoc:
             'amount' => direct_response_fields[9],
             'invoice_number' => direct_response_fields[7],
             'order_description' => direct_response_fields[8],
-            'purchase_order_number' => direct_response_fields[36]
+            'purchase_order_number' => direct_response_fields[36],
+            'transaction_id' => direct_response_fields[6],
+            'response_code' => (direct_response_fields[0].to_i rescue nil),
+            'response_reason_code' => (direct_response_fields[2].to_i rescue nil),
             # TODO fill in other fields
           }
         )
