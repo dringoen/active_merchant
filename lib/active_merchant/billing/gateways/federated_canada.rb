@@ -2,7 +2,7 @@ module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     class FederatedCanadaGateway < Gateway
       # Same URL for both test and live, testing is done by using the test username (demo) and password (password).
-      URL = 'https://secure.federatedgateway.com/api/transact.php'
+      self.live_url = self.test_url = 'https://secure.federatedgateway.com/api/transact.php'
 
       APPROVED, DECLINED, ERROR = 1, 2, 3
 
@@ -22,7 +22,6 @@ module ActiveMerchant #:nodoc:
 
       def initialize(options = {})
         requires!(options, :login, :password)
-        @options = options
         super
       end
 
@@ -49,19 +48,18 @@ module ActiveMerchant #:nodoc:
         commit('capture', money, options)
       end
 
-      def credit(money, identification, options = {}) # also referred to as refund
-        post = { :transactionid => identification}
-        commit('refund', money, post)
-      end
-
       def void(authorization, options = {})
         options[:transactionid] = authorization
         commit('void', nil, options)
       end
 
       def refund(money, authorization, options = {})
-        options[:transactionid] = authorization
-        commit('refund', money, options)
+        commit('refund', money, options.merge(:transactionid => authorization))
+      end
+
+      def credit(money, authorization, options = {})
+        deprecated CREDIT_DEPRECATION_MESSAGE
+        refund(money, authorization, options)
       end
 
       private
@@ -102,7 +100,7 @@ module ActiveMerchant #:nodoc:
         post[:orderid] = options[:order_id]
         post[:orderdescription] = options[:description]
       end
-      
+
       def add_creditcard(post, creditcard)
         post[:ccnumber] = creditcard.number
         post[:ccexp] = expdate(creditcard)
@@ -122,15 +120,15 @@ module ActiveMerchant #:nodoc:
           memo
         end
       end
-      
+
       def commit(action, money, parameters)
         parameters[:amount] = amount(money)
-        data = ssl_post(URL, post_data(action, parameters))
+        data = ssl_post(self.live_url, post_data(action, parameters))
         response = parse(data)
         message = message_from(response)
         test_mode = test?
 
-        Response.new(success?(response), message, response, 
+        Response.new(success?(response), message, response,
           :test => test?,
           :authorization => response['transactionid'],
           :avs_result => {:code =>  response['avsresponse']},

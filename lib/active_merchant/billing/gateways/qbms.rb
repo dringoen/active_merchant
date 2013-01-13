@@ -1,11 +1,9 @@
-require 'securerandom'
-
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     class QbmsGateway < Gateway
       API_VERSION = '4.0'
 
-      class_inheritable_accessor :test_url, :live_url
+      class_attribute :test_url, :live_url
 
       self.test_url = "https://webmerchantaccount.ptc.quickbooks.com/j/AppGateway"
       self.live_url = "https://webmerchantaccount.quickbooks.com/j/AppGateway"
@@ -40,8 +38,6 @@ module ActiveMerchant #:nodoc:
       #
       def initialize(options = {})
         requires!(options, :login, :ticket)
-        test_mode = options[:test] || false
-        @options = options
         super
       end
 
@@ -104,6 +100,11 @@ module ActiveMerchant #:nodoc:
       #
       #
       def credit(money, identification, options = {})
+        deprecated CREDIT_DEPRECATION_MESSAGE
+        refund(money, identification, options = {})
+      end
+
+      def refund(money, identification, options = {})
         commit(:refund, money, options.merge(:transaction_id => identification))
       end
 
@@ -113,7 +114,7 @@ module ActiveMerchant #:nodoc:
       end
 
       private
-      
+
       def hosted?
         @options[:pem]
       end
@@ -125,6 +126,7 @@ module ActiveMerchant #:nodoc:
         parameters[:trans_request_id] ||= SecureRandom.hex(10)
 
         req = build_request(type, money, parameters)
+
         data = ssl_post(url, req, "Content-Type" => "application/x-qbmsxml")
         response = parse(type, data)
         message = (response[:status_message] || '').strip
@@ -259,8 +261,8 @@ module ActiveMerchant #:nodoc:
 
       def add_address(xml, parameters)
         if address = parameters[:billing_address] || parameters[:address]
-          xml.tag!("CreditCardAddress", address[:address1][0...30])
-          xml.tag!("CreditCardPostalCode", address[:zip][0...9])
+          xml.tag!("CreditCardAddress", (address[:address1] || "")[0...30])
+          xml.tag!("CreditCardPostalCode", (address[:zip] || "")[0...9])
         end
       end
 

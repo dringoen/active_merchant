@@ -64,8 +64,7 @@ module ActiveMerchant #:nodoc:
           
 
           def customer(params = {})
-            full_name = "#{params[:first_name]} #{params[:last_name]}"
-            add_field(mappings[:customer][:name], full_name)
+            add_field(mappings[:customer][:name], full_name(params))
             add_field(mappings[:customer][:email], params[:email])
           end
           
@@ -79,13 +78,11 @@ module ActiveMerchant #:nodoc:
           end
           
           def shipping_address(params = {})
-            update_address(:shipping_address, params)
-            super(params.dup)
+            super(update_address(:shipping_address, params))
           end
           
           def billing_address(params = {})
-            update_address(:billing_address, params)
-            super(params.dup)
+            super(update_address(:billing_address, params))
           end
           
           def form_fields
@@ -121,15 +118,20 @@ module ActiveMerchant #:nodoc:
           end
           
           def update_address(address_type, params)
+            params = params.dup
             address = params[:address1]
-            address << " #{params[:address2]}" if params[:address2]
-            params[:address1] = address
+            address = "#{address} #{params[:address2]}" if params[:address2].present?
+            address = "#{params[:company]} #{address}" if params[:company].present?
+            params[:address1] = address            
+            
             params[:phone] = normalize_phone_number(params[:phone])
             add_land_line_phone_for(address_type, params)
             
-            if address_type == :shipping_address && params[:name].blank?
-              add_field(mappings[:shipping_address][:name], fields[mappings[:customer][:name]])
+            if address_type == :shipping_address
+              shipping_name = full_name(params) || fields[mappings[:customer][:name]]
+              add_field(mappings[:shipping_address][:name], shipping_name)
             end
+            params
           end
           
           # Split a single phone number into the country code, area code and local number as best as possible
@@ -171,19 +173,25 @@ module ActiveMerchant #:nodoc:
           end
           
           def encode_value(value)
-            encoded = ActiveSupport::Base64.encode64s(value)
+            encoded = Base64.strict_encode64(value)
             string_to_encode = encoded[0, 1] + "T" + encoded[1, encoded.length]
-            ActiveSupport::Base64.encode64s(string_to_encode)
+            Base64.strict_encode64(string_to_encode)
           end
           
           def decode_value(value)
-            decoded = ActiveSupport::Base64.decode64(value)
+            decoded = Base64.decode64(value)
             string_to_decode = decoded[0, 1] + decoded[2, decoded.length]
-            ActiveSupport::Base64.decode64(string_to_decode)
+            Base64.decode64(string_to_decode)
           end
           
           def phone_code_for_country(country)
             PHONE_CODES[country]
+          end
+          
+          def full_name(params)
+            return if params[:name].blank? && params[:first_name].blank? && params[:last_name].blank?
+            
+            params[:name] || "#{params[:first_name]} #{params[:last_name]}"
           end
         end
       end
