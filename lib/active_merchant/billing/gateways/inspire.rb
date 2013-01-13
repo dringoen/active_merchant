@@ -24,6 +24,13 @@ module ActiveMerchant #:nodoc:
         super
       end
 
+      # How to set the merchant account? (DRR: Information from Inspire)
+      # There are a few ways you could do this. You can pass the 'processorid' field as part of the transaction data, 
+      # assigning it the value of the processor you want the transaction routed to. 
+      # Alternately, you can assign a username to only have privileges to one processor - 
+      # every transaction submitted by that username would route to the processor they had been assigned. 
+      # Lastly, you can use advanced load balancing to route transactions based on the value of a merchant defined field.
+
       # Pass :store => true in the options to store the
       # payment info at Inspire Gateway and get a generated
       # customer_vault_id in the response.
@@ -36,8 +43,9 @@ module ActiveMerchant #:nodoc:
         add_payment_source(post, creditcard,options)
         add_address(post, creditcard, options)
         add_customer_data(post, options)
+        add_order_info(post, options)
 
-        commit('auth', money, post)
+        commit(options[:no_authorize] ? nil : 'auth', money, post)
       end
 
       def purchase(money, payment_source, options = {})
@@ -46,6 +54,7 @@ module ActiveMerchant #:nodoc:
         add_payment_source(post, payment_source, options)
         add_address(post, payment_source, options)
         add_customer_data(post, options)
+        add_order_info(post, options)
 
         commit('sale', money, post)
       end
@@ -61,6 +70,18 @@ module ActiveMerchant #:nodoc:
         post[:transactionid] = authorization
         commit('void', nil, post)
       end
+
+      def refund(money, payment_source, options = {})
+        post = {}
+        add_invoice(post, options)
+        add_payment_source(post, payment_source, options)
+        add_address(post, payment_source, options)
+        add_customer_data(post, options)
+        add_order_info(post, options)
+        post[:transactionid] = options[:transactionid]
+          
+        commit('refund', money, post)
+      end                       
 
       # Update the values (such as CC expiration) stored at
       # InspireGateway.  The CC number must be supplied in the
@@ -87,10 +108,18 @@ module ActiveMerchant #:nodoc:
       # store and unstore need to be defined
       def store(creditcard, options = {})
         billing_id = options.delete(:billing_id).to_s || true
-        authorize(100, creditcard, options.merge(:store => billing_id))
+        authorize((options[:no_authorize] ? nil : 100), creditcard, options.merge(:store => billing_id))
       end
 
       alias_method :unstore, :delete
+
+      def get_vault_record(vault_id)
+        post = {
+          :report_type       => 'customer_vault',
+          :customer_vault_id => vault_id,
+        }
+        query('customer', post)
+      end
 
       private
       def add_customer_data(post, options)
@@ -123,14 +152,15 @@ module ActiveMerchant #:nodoc:
 
       def add_payment_source(params, source, options={})
         case determine_funding_source(source)
-        when :vault       then add_customer_vault_id(params, source)
+        when :vault       then add_customer_vault_id(params, source, options)
         when :credit_card then add_creditcard(params, source, options)
         when :check       then add_check(params, source)
         end
       end
 
-      def add_customer_vault_id(params,vault_id)
+      def add_customer_vault_id(params,vault_id,options={})
         params[:customer_vault_id] = vault_id
+        params[:cvv] = options[:verification_value] if options[:verification_value]
       end
 
       def add_creditcard(post, creditcard,options)
@@ -152,6 +182,11 @@ module ActiveMerchant #:nodoc:
         post[:checkaccount] = check.account_number # The customer's account number
         post[:account_holder_type] = check.account_holder_type # The customer's type of ACH account
         post[:account_type] = check.account_type # The customer's type of ACH account
+      end
+
+      def add_order_info(post, options)
+        post[:shipping_company]  = options[:shipping_company]
+        post[:shipping_lastname] = options[:shipping_lastname]
       end
 
       def parse(body)
@@ -176,6 +211,43 @@ module ActiveMerchant #:nodoc:
           :avs_result => { :code => response["avsresponse"] }
         )
 
+      end
+
+      def query(desired_result_node, parameters)
+        action = 'query'
+        response = ssl_post(QUERY_URL, post_data(action,parameters))
+        parse_xml(desired_result_node, response)
+      end
+
+      def parse_xml(desired_result_node, xml)
+        xml = REXML::Document.new(xml)
+        root = REXML::XPath.first(xml, "//#{desired_result_node}")
+        if root
+          response = parse_element(root)
+        end
+        response
+      end
+
+      def parse_element(node)
+        if node.has_elements?
+          response = {}
+          node.elements.each{ |e|
+            key = e.name.underscore
+            value = parse_element(e)
+            if response.has_key?(key)
+              if response[key].is_a?(Array)
+                response[key].push(value)
+              else
+                response[key] = [response[key], value]
+              end
+            else
+              response[key] = parse_element(e)
+            end
+          }
+        else
+          response = node.text
+        end
+        response
       end
 
       def expdate(creditcard)
