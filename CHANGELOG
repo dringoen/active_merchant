@@ -15,6 +15,7 @@
 * QBMS gateway: Allow partial addresses [duff]
 * Authorize.Net CIM: Allow omitting card expiration date [shanebonham]
 * Authorize.Net CIM: Add support for extraOptions to createCustomerProfileTransaction [tpiekos]
+* Inspire: Ability for forgo authorization when adding to vault, implement refunds, populate shipping_company & shipping_lastname, implement get_vault_record [dringoen]
 
 == Version 1.29.3 (December 7, 2012)
 
