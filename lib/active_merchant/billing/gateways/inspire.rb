@@ -4,6 +4,8 @@ module ActiveMerchant #:nodoc:
     class InspireGateway < Gateway
       self.live_url = self.test_url = 'https://secure.inspiregateway.net/api/transact.php'
 
+      QUERY_URL = 'https://secure.inspiregateway.net/api/query.php'
+      
       self.supported_countries = ['US']
       self.supported_cardtypes = [:visa, :master, :american_express]
       self.homepage_url = 'http://www.inspiregateway.com'
@@ -21,22 +23,23 @@ module ActiveMerchant #:nodoc:
       # See the Inspire Integration Guide for details. (default: +false+)
       def initialize(options = {})
         requires!(options, :login, :password)
+        @options = options
         super
-      end
-
+      end  
+      
+      # Pass :store => true in the options to store the 
+      # payment info at Inspire Gateway and get a generated 
+      # customer_vault_id in the response.  
+      # Pass :store => some_number_or_string to specify the
+      # customer_vault_id InspireGateway should use (make sure it's
+      # unique).
+      
       # How to set the merchant account? (DRR: Information from Inspire)
       # There are a few ways you could do this. You can pass the 'processorid' field as part of the transaction data, 
       # assigning it the value of the processor you want the transaction routed to. 
       # Alternately, you can assign a username to only have privileges to one processor - 
       # every transaction submitted by that username would route to the processor they had been assigned. 
       # Lastly, you can use advanced load balancing to route transactions based on the value of a merchant defined field.
-
-      # Pass :store => true in the options to store the
-      # payment info at Inspire Gateway and get a generated
-      # customer_vault_id in the response.
-      # Pass :store => some_number_or_string to specify the
-      # customer_vault_id InspireGateway should use (make sure it's
-      # unique).
       def authorize(money, creditcard, options = {})
         post = {}
         add_invoice(post, options)
@@ -44,7 +47,7 @@ module ActiveMerchant #:nodoc:
         add_address(post, creditcard, options)
         add_customer_data(post, options)
         add_order_info(post, options)
-
+        
         commit(options[:no_authorize] ? nil : 'auth', money, post)
       end
 
@@ -55,7 +58,7 @@ module ActiveMerchant #:nodoc:
         add_address(post, payment_source, options)
         add_customer_data(post, options)
         add_order_info(post, options)
-
+             
         commit('sale', money, post)
       end
 
@@ -93,7 +96,7 @@ module ActiveMerchant #:nodoc:
         add_creditcard(post, creditcard, options)
         add_address(post, creditcard, options)
         add_customer_data(post, options)
-
+             
         commit(nil, nil, post)
       end
 
@@ -121,7 +124,7 @@ module ActiveMerchant #:nodoc:
         query('customer', post)
       end
 
-      private
+    private                             
       def add_customer_data(post, options)
         if options.has_key? :email
           post[:email] = options[:email]
@@ -185,6 +188,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def add_order_info(post, options)
+        post[:orderid]           = options[:orderid]
+        post[:orderdescription]  = options[:orderdescription]
         post[:shipping_company]  = options[:shipping_company]
         post[:shipping_lastname] = options[:shipping_lastname]
       end
@@ -192,7 +197,7 @@ module ActiveMerchant #:nodoc:
       def parse(body)
         results = {}
         body.split(/&/).each do |pair|
-          key,val = pair.split(/=/)
+          key,val = pair.split( /=/ )
           results[key] = val
         end
 
@@ -271,7 +276,7 @@ module ActiveMerchant #:nodoc:
 
       def post_data(action, parameters = {})
         post = {}
-        post[:username]      = @options[:login]
+        post[:username]   = @options[:login]
         post[:password]   = @options[:password]
         post[:type]       = action if action
 
@@ -290,4 +295,3 @@ module ActiveMerchant #:nodoc:
     end
   end
 end
-
