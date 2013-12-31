@@ -88,7 +88,7 @@ class RemoteLitleTest < Test::Unit::TestCase
     assert_equal 'Insufficient Funds', response.message
   end
 
-  def test_authorization_capture_credit_void
+  def test_authorization_capture_refund_void
     #Auth
     assert auth_response = @gateway.authorize(10010, @credit_card1, @options)
 
@@ -102,7 +102,7 @@ class RemoteLitleTest < Test::Unit::TestCase
 
     #Credit against the Capture
     capture_litle_txn_id = capture_response.params['litleOnlineResponse']['captureResponse']['litleTxnId']
-    assert credit_response = @gateway.credit(10010, capture_litle_txn_id)
+    assert credit_response = @gateway.refund(10010, capture_litle_txn_id)
     assert_success credit_response
     assert_equal 'Approved', credit_response.message
 
@@ -119,8 +119,8 @@ class RemoteLitleTest < Test::Unit::TestCase
     assert_equal 'No transaction found with specified litleTxnId', capture_response.message
   end
 
-  def test_credit_unsuccessful
-    assert credit_response = @gateway.credit(10010, 123456789012345360)
+  def test_refund_unsuccessful
+    assert credit_response = @gateway.refund(10010, 123456789012345360)
     assert_failure credit_response
     assert_equal 'No transaction found with specified litleTxnId', credit_response.message
   end
@@ -161,7 +161,15 @@ class RemoteLitleTest < Test::Unit::TestCase
     token = store_response.authorization
     assert_equal store_response.params['litleOnlineResponse']['registerTokenResponse']['litleToken'], token
 
-    assert response = @gateway.purchase(10010, token, :order_id => '12345')
+    options = {
+        :order_id => '12345',
+        :token    => {
+            :month => credit_card.month,
+            :year  => credit_card.year
+        }
+    }
+
+    assert response = @gateway.purchase(10010, token, options)
     assert_success response
     assert_equal 'Approved', response.message
   end

@@ -3,11 +3,11 @@ require 'nokogiri'
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     # Public: This gateway allows you to interact with any gateway you've
-    # created in Spreedly Core (https://spreedlycore.com).  It's an adapter
-    # which can be particularly useful if you already have code interacting with
-    # ActiveMerchant and want to easily take advantage of Core's vault.
+    # created in Spreedly (https://spreedly.com).  It's an adapter which can be
+    # particularly useful if you already have code interacting with
+    # ActiveMerchant and want to easily take advantage of Spreedly's vault.
     class SpreedlyCoreGateway < Gateway
-      self.live_url = 'https://spreedlycore.com/v1'
+      self.live_url = 'https://core.spreedly.com/v1'
 
       self.supported_countries = %w(AD AE AT AU BD BE BG BN CA CH CY CZ DE DK EE EG ES FI FR GB
                                     GI GR HK HU ID IE IL IM IN IS IT JO KW LB LI LK LT LU LV MC
@@ -15,18 +15,18 @@ module ActiveMerchant #:nodoc:
                                     TR TT UM US VA VN ZA)
 
       self.supported_cardtypes = [:visa, :master, :american_express, :discover]
-      self.homepage_url = 'https://spreedlycore.com'
-      self.display_name = 'Spreedly Core'
+      self.homepage_url = 'https://spreedly.com'
+      self.display_name = 'Spreedly'
       self.money_format = :cents
       self.default_currency = 'USD'
 
-      # Public: Create a new Spreedly Core Gateway.
+      # Public: Create a new Spreedly gateway.
       #
       # options - A hash of options:
-      #           :login         - Your Spreedly Core API login.
-      #           :password      - Your Spreedly Core API secret.
+      #           :login         - The environment key.
+      #           :password      - The access secret.
       #           :gateway_token - The token of the gateway you've created in
-      #                            Spreedly Core.
+      #                            Spreedly.
       def initialize(options = {})
         requires!(options, :login, :password, :gateway_token)
         super
@@ -35,9 +35,10 @@ module ActiveMerchant #:nodoc:
       # Public: Run a purchase transaction.
       #
       # money          - The monetary amount of the transaction in cents.
-      # payment_method - The CreditCard or the Spreedly Core payment method
-      #                  token.
-      # options        - A standard ActiveMerchant options hash
+      # payment_method - The CreditCard or the Spreedly payment method token.
+      # options        - A hash of options:
+      #                  :store - Retain the payment method if the purchase
+      #                           succeeds.  Defaults to false.  (optional)
       def purchase(money, payment_method, options = {})
         if payment_method.is_a?(String)
           purchase_with_token(money, payment_method, options)
@@ -52,9 +53,10 @@ module ActiveMerchant #:nodoc:
       # Public: Run an authorize transaction.
       #
       # money          - The monetary amount of the transaction in cents.
-      # payment_method - The CreditCard or the Spreedly Core payment method
-      #                  token.
-      # options        - A standard ActiveMerchant options hash
+      # payment_method - The CreditCard or the Spreedly payment method token.
+      # options        - A hash of options:
+      #                  :store - Retain the payment method if the authorize
+      #                           succeeds.  Defaults to false.  (optional)
       def authorize(money, payment_method, options = {})
         if payment_method.is_a?(String)
           authorize_with_token(money, payment_method, options)
@@ -86,16 +88,17 @@ module ActiveMerchant #:nodoc:
         commit("transactions/#{authorization}/void.xml", '')
       end
 
-      # Public: Store a credit card in the Spreedly Core vault and retain it.
+      # Public: Store a credit card in the Spreedly vault and retain it.
       #
       # credit_card    - The CreditCard to store
       # options        - A standard ActiveMerchant options hash
       def store(credit_card, options={})
-        save_card(true, credit_card, options)
+        retain = (options.has_key?(:retain) ? options[:retain] : true)
+        save_card(retain, credit_card, options)
       end
 
-      # Public: Redact the CreditCard in Spreedly Core.  This wipes the
-      # sensitive payment information from the card.
+      # Public: Redact the CreditCard in Spreedly. This wipes the sensitive
+      #         payment information from the card.
       #
       # credit_card    - The CreditCard to store
       # options        - A standard ActiveMerchant options hash
@@ -116,7 +119,7 @@ module ActiveMerchant #:nodoc:
 
       def purchase_with_token(money, payment_method_token, options)
         request = auth_purchase_request(money, payment_method_token, options)
-        commit("gateways/#{@options[:gateway_token]}/purchase.xml", request)
+        commit("gateways/#{options[:gateway_token] || @options[:gateway_token]}/purchase.xml", request)
       end
 
       def authorize_with_token(money, payment_method_token, options)
@@ -128,17 +131,20 @@ module ActiveMerchant #:nodoc:
         build_xml_request('transaction') do |doc|
           add_invoice(doc, money, options)
           doc.payment_method_token(payment_method_token)
+          doc.retain_on_success(true) if options[:store]
         end
       end
 
       def add_invoice(doc, money, options)
         doc.amount amount(money)
         doc.currency_code(options[:currency] || currency(money) || default_currency)
+        doc.order_id(options[:order_id])
       end
 
       def add_credit_card(doc, credit_card, options)
         doc.credit_card do
           doc.number(credit_card.number)
+          doc.verification_value(credit_card.verification_value)
           doc.first_name(credit_card.first_name)
           doc.last_name(credit_card.last_name)
           doc.month(credit_card.month)
@@ -149,6 +155,7 @@ module ActiveMerchant #:nodoc:
           doc.city(options[:billing_address].try(:[], :city))
           doc.state(options[:billing_address].try(:[], :state))
           doc.zip(options[:billing_address].try(:[], :zip))
+          doc.country(options[:billing_address].try(:[], :country))
         end
       end
 

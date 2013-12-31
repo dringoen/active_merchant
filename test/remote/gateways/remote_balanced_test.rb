@@ -30,10 +30,24 @@ class RemoteBalancedTest < Test::Unit::TestCase
     assert_match /Customer call bank/, response.message
   end
 
+  def test_invalid_email
+    assert response = @gateway.purchase(@amount, @credit_card, @options.merge(:email => 'invalid_email'))
+    assert_failure response
+    assert_match /Invalid field.*email_address/, response.message
+  end
+
   def test_unsuccessful_purchase
     assert response = @gateway.purchase(@amount, @declined_card, @options)
     assert_failure response
     assert_match /Account Frozen/, response.message
+  end
+
+  def test_passing_appears_on_statement
+    options = @options.merge(appears_on_statement_as: "Homer Electric")
+    assert response = @gateway.purchase(@amount, @credit_card, options)
+
+    assert_success response
+    assert_equal "Homer Electric", response.params['appears_on_statement_as']
   end
 
   def test_authorize_and_capture
@@ -78,7 +92,7 @@ class RemoteBalancedTest < Test::Unit::TestCase
   def test_refund_purchase
     assert debit = @gateway.purchase(@amount, @credit_card, @options)
     assert_success debit
-    assert refund = @gateway.refund(debit.authorization)
+    assert refund = @gateway.refund(nil, debit.authorization)
     assert_success refund
     assert_equal @amount, refund.params['amount']
   end
@@ -86,9 +100,7 @@ class RemoteBalancedTest < Test::Unit::TestCase
   def test_refund_partial_purchase
     assert debit = @gateway.purchase(@amount, @credit_card, @options)
     assert_success debit
-    assert refund = @gateway.refund(debit.authorization, {
-        :amount => @amount / 2
-    })
+    assert refund = @gateway.refund(@amount / 2, debit.authorization)
     assert_success refund
     assert_equal @amount / 2, refund.params['amount']
   end

@@ -44,7 +44,7 @@ class LitleTest < Test::Unit::TestCase
       'litleToken'=>'1111222233334444'
     }
   end
-  
+
   def test_build_purchase_request
     # define all inputs
     money = 1000
@@ -116,13 +116,50 @@ class LitleTest < Test::Unit::TestCase
 
   def test_build_purchase_request_with_token
     # define all inputs
-    money = 1000
-    token = '1234567890123456'
+    money    = 1000
+    token    = '1234567890123456'
+    month    = 9
+    year     = Time.now.year + 1
+    exp_date = "#{'%02d' % month.to_i}#{year.to_s[2..3]}"
+    brand    = 'visa'
+    cvv      = '123'
+    options  = {
+        :token => {
+            :month              => month,
+            :year               => year,
+            :brand              => brand,
+            :verification_value => cvv
+        }
+    }
 
-    hash_from_gateway = @gateway.send(:build_purchase_request, money, token, {})
+    hash_from_gateway = @gateway.send(:build_purchase_request, money, token, options)
 
     assert_equal money, hash_from_gateway['amount']
     assert_equal token, hash_from_gateway['token']['litleToken']
+    assert_equal exp_date, hash_from_gateway['token']['expDate']
+    assert_equal cvv, hash_from_gateway['token']['cardValidationNum']
+    assert_equal 'VI', hash_from_gateway['token']['type']
+  end
+
+  def test_build_authorize_request_with_token
+    # define all inputs
+    money    = 1000
+    token    = '1234567890123456'
+    month    = 9
+    year     = Time.now.year + 1
+    exp_date = "#{'%02d' % month.to_i}#{year.to_s[2..3]}"
+    options  = {
+        :token => {
+            :month => month,
+            :year  => year
+        }
+    }
+
+    hash_from_gateway = @gateway.send(:build_authorize_request, money, token, options)
+
+    assert_equal money, hash_from_gateway['amount']
+    assert_equal token, hash_from_gateway['token']['litleToken']
+    assert_equal exp_date, hash_from_gateway['token']['expDate']
   end
 
   def test_create_hash_money_not_nil
@@ -188,19 +225,42 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'cool stuff', hashFromGateway['enhancedData']['customerReference']
   end
 
+  def test_create_hash_with_default_order_source
+    # define all inputs
+    money = 1000
+    options = {
+    }
+
+    hashFromGateway = @gateway.send(:create_hash, money, options)
+
+    assert_equal 'ecommerce', hashFromGateway['orderSource']
+  end
+
+  def test_create_hash_with_custom_order_source
+    # define all inputs
+    money = 1000
+    options = {
+        :order_source => 'recurring'
+    }
+
+    hashFromGateway = @gateway.send(:create_hash, money, options)
+
+    assert_equal 'recurring', hashFromGateway['orderSource']
+  end
+
   def test_create_hash_money_nil
     # define all inputs
     money = nil
-    
+
     hashFromGateway = @gateway.send(:create_hash, money, {})
 
     assert_nil hashFromGateway['amount']
   end
-  
+
   def test_create_hash_money_empty_string
     # define all inputs
     money = ''
-    
+
     hashFromGateway = @gateway.send(:create_hash, money, {})
 
     assert_nil hashFromGateway['amount']
@@ -259,11 +319,33 @@ class LitleTest < Test::Unit::TestCase
 
   end
 
-  def test_create_credit_hash
-    hashFromGateway = @gateway.send(:create_credit_hash, 1000, '123456789012345678', {})
+  def test_build_credit_request_identification
+    hashFromGateway = @gateway.send(:build_credit_request, 1000, '123456789012345678', {})
     assert_equal '123456789012345678', hashFromGateway['litleTxnId']
     assert_equal nil, hashFromGateway['orderSource']
     assert_equal nil, hashFromGateway['orderId']
+  end
+
+  def test_build_credit_request_token
+    token   = '171299999999999'
+    options = {
+        :order_id        => '1234',
+        :billing_address => {
+            :zip => '12345'
+        },
+        :token           => {
+            :month => 11,
+            :year  => 2014
+        }
+    }
+
+    hashFromGateway = @gateway.send(:build_credit_request, 1000, token, options)
+    assert_equal nil, hashFromGateway['litleTxnId']
+    assert_equal 'ecommerce', hashFromGateway['orderSource']
+    assert_equal '1234', hashFromGateway['orderId']
+    assert_equal token, hashFromGateway['token']['litleToken']
+    assert_equal '1114', hashFromGateway['token']['expDate']
+    assert_equal '12345', hashFromGateway['billToAddress']['zip']
   end
 
   def test_currency_USD
@@ -293,8 +375,9 @@ class LitleTest < Test::Unit::TestCase
     responseFrom = @gateway.authorize(0, creditcard)
     assert_equal true, responseFrom.success?
     assert_equal 'successful', responseFrom.message
-    assert_equal '1234', responseFrom.authorization
+    assert_equal '1234;authorization', responseFrom.authorization
     assert_equal '1111222233334444', responseFrom.params['litleOnlineResponse']['authorizationResponse']['litleToken']
+    assert_equal '000', responseFrom.params['response_code']
   end
 
   def test_avs
@@ -311,7 +394,7 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'Y', responseFrom.avs_result['street_match']
     assert_equal 'Y', responseFrom.avs_result['postal_match']
   end
-  
+
   def test_cvv
     fraudResult = {'cardValidationResult'=>'M'}
     authorizationResponseObj = @response_options.merge('fraudResult' => fraudResult)
@@ -339,7 +422,7 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'N', responseFrom.avs_result['street_match']
     assert_equal 'Y', responseFrom.avs_result['postal_match']
   end
-  
+
   def test_sale_cvv
     fraudResult = {'cardValidationResult'=>''}
     saleResponseObj = @response_options.merge('fraudResult' => fraudResult)
@@ -352,7 +435,7 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'P', responseFrom.cvv_result['code']
     assert_equal 'Not Processed', responseFrom.cvv_result['message']
   end
-    
+
   def test_auth_fail
     authorizationResponseObj = {'response' => '111', 'message' => 'fail', 'litleTxnId' => '1234', 'litleToken'=>'1111222233334444'}
     retObj = {'response'=>'0','authorizationResponse'=>authorizationResponseObj}
@@ -361,7 +444,7 @@ class LitleTest < Test::Unit::TestCase
     creditcard = CreditCard.new(@credit_card_options)
     responseFrom = @gateway.authorize(0, creditcard)
     assert_equal false, responseFrom.success?
-    assert_equal '1234', responseFrom.authorization
+    assert_equal '1234;authorization', responseFrom.authorization
     assert_equal '1111222233334444', responseFrom.params['litleOnlineResponse']['authorizationResponse']['litleToken']
   end
 
@@ -383,7 +466,7 @@ class LitleTest < Test::Unit::TestCase
     creditcard = CreditCard.new(@credit_card_options)
     responseFrom = @gateway.purchase(0, creditcard)
     assert_equal true, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;sale', responseFrom.authorization
   end
 
   def test_purchase_pass_with_token
@@ -391,10 +474,16 @@ class LitleTest < Test::Unit::TestCase
     retObj = {'response'=>'0','saleResponse'=>purchaseResponseObj}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
 
-    token = '1234567890123456'
-    responseFrom = @gateway.purchase(0, token)
+    options = {
+        :token => {
+            :month => '11',
+            :year  => '2014'
+        }
+    }
+
+    responseFrom = @gateway.purchase(0, '171299999999999', options)
     assert_equal true, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;sale', responseFrom.authorization
   end
 
   def test_purchase_fail
@@ -405,7 +494,7 @@ class LitleTest < Test::Unit::TestCase
     creditcard = CreditCard.new(@credit_card_options)
     responseFrom = @gateway.purchase(0, creditcard)
     assert_equal false, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;sale', responseFrom.authorization
   end
 
   def test_purchase_fail_schema
@@ -425,7 +514,7 @@ class LitleTest < Test::Unit::TestCase
     authorization = "1234"
     responseFrom = @gateway.capture(0, authorization)
     assert_equal true, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;capture', responseFrom.authorization
   end
 
   def test_capture_fail
@@ -435,7 +524,7 @@ class LitleTest < Test::Unit::TestCase
     authorization = "1234"
     responseFrom = @gateway.capture(0, authorization)
     assert_equal false, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;capture', responseFrom.authorization
   end
 
   def test_capture_fail_schema
@@ -447,60 +536,89 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'Error validating xml data against the schema', responseFrom.message
   end
 
-  def test_void_pass
+  def test_void_sale_pass
     voidResponseObj = {'response' => '000', 'message' => 'pass', 'litleTxnId'=>'123456789012345678'}
     retObj = {'response'=>'0','voidResponse'=>voidResponseObj}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = "1234"
+    identification = "1234;sale"
     responseFrom = @gateway.void(identification)
     assert_equal true, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;void', responseFrom.authorization
   end
 
-  def test_void_fail
+  def test_void_sale_fail
     voidResponseObj = {'response' => '111', 'message' => 'fail', 'litleTxnId'=>'123456789012345678'}
     retObj = {'response'=>'0','voidResponse'=>voidResponseObj}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = "1234"
+    identification = "1234;sale"
     responseFrom = @gateway.void(identification)
     assert_equal false, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;void', responseFrom.authorization
   end
 
-  def test_void_fail_schema
+  def test_void_sale_fail_schema
     retObj = {'response'=>'1','message'=>'Error validating xml data against the schema'}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = "1234"
+    identification = "1234;sale"
     responseFrom = @gateway.void(identification)
     assert_equal false, responseFrom.success?
     assert_equal 'Error validating xml data against the schema', responseFrom.message
   end
 
-  def test_credit_pass
+  def test_void_authorization_pass
+    authReversalResponseObj = {'response' => '000', 'message' => 'pass', 'litleTxnId'=>'123456789012345678'}
+    retObj = {'response'=>'0','authReversalResponse'=>authReversalResponseObj}
+    LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
+    identification = "1234;authorization"
+    responseFrom = @gateway.void(identification)
+    assert_equal true, responseFrom.success?
+    assert_equal '123456789012345678;authReversal', responseFrom.authorization
+  end
+
+  def test_void_authorization_fail
+    authReversalResponseObj = {'response' => '111', 'message' => 'fail', 'litleTxnId'=>'123456789012345678'}
+    retObj = {'response'=>'0','authReversalResponse'=>authReversalResponseObj}
+    LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
+    identification = "1234;authorization"
+    responseFrom = @gateway.void(identification)
+    assert_equal false, responseFrom.success?
+    assert_equal '123456789012345678;authReversal', responseFrom.authorization
+  end
+
+  def test_void_authorization_fail_schema
+    retObj = {'response'=>'1','message'=>'Error validating xml data against the schema'}
+    LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
+    identification = "1234;authorization"
+    responseFrom = @gateway.void(identification)
+    assert_equal false, responseFrom.success?
+    assert_equal 'Error validating xml data against the schema', responseFrom.message
+  end
+
+  def test_refund_pass
     creditResponseObj = {'response' => '000', 'message' => 'pass', 'litleTxnId'=>'123456789012345678'}
     retObj = {'response'=>'0','creditResponse'=>creditResponseObj}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = "1234"
-    responseFrom = @gateway.credit(0, identification)
+    identification = "1234;credit"
+    responseFrom = @gateway.refund(0, identification)
     assert_equal true, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;credit', responseFrom.authorization
   end
 
-  def test_credit_fail
+  def test_refund_fail
     creditResponseObj = {'response' => '111', 'message' => 'fail', 'litleTxnId'=>'123456789012345678'}
     retObj = {'response'=>'0','creditResponse'=>creditResponseObj}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = "1234"
-    responseFrom = @gateway.credit(0, identification)
+    identification = "1234;credit"
+    responseFrom = @gateway.refund(0, identification)
     assert_equal false, responseFrom.success?
-    assert_equal '123456789012345678', responseFrom.authorization
+    assert_equal '123456789012345678;credit', responseFrom.authorization
   end
 
-  def test_credit_fail_schema
+  def test_refund_fail_schema
     retObj = {'response'=>'1','message'=>'Error validating xml data against the schema'}
     LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
-    identification = '1234'
-    responseFrom = @gateway.credit(0, identification)
+    identification = '1234;credit'
+    responseFrom = @gateway.refund(0, identification)
     assert_equal false, responseFrom.success?
     assert_equal 'Error validating xml data against the schema', responseFrom.message
   end
@@ -548,6 +666,17 @@ class LitleTest < Test::Unit::TestCase
     assert_equal 'Error validating xml data against the schema', responseFrom.message
   end
 
+  def test_store_via_paypage
+    storeResponseObj = {'response' => '801', 'message' => 'Account number was successfully registered', 'litleToken'=>'1111222233334444', 'litleTxnId'=>nil}
+    retObj = {'response'=>'0','registerTokenResponse'=>storeResponseObj}
+    LitleOnline::Communications.expects(:http_post => retObj.to_xml(:root => 'litleOnlineResponse'))
+    paypage_registration_id = 'eVY1SUYrSTFndWo0U3p0L2RaWjR1blhMVEh2L0pJTWl5bm1LS3QyUDVWOFRpczRYYS9qbndzLzVEb0M5N3RTcQ=='
+
+    responseFrom = @gateway.store(paypage_registration_id,{})
+    assert_equal true, responseFrom.success?
+    assert_equal '1111222233334444', responseFrom.params['litleOnlineResponse']['registerTokenResponse']['litleToken']
+  end
+
   def test_in_production_with_test_param_sends_request_to_test_server
     begin
       ActiveMerchant::Billing::Base.mode = :production
@@ -571,4 +700,76 @@ class LitleTest < Test::Unit::TestCase
     end
   end
 
+  def test_configured_logger_has_a_default
+    # The default is actually provided by the LittleOnline gem, but we
+    # assert its presence in order to show ActiveMerchant need not
+    # configure a logger
+    assert LitleOnline::Configuration.logger.is_a?(Logger)
+  end
+
+  def test_configured_logger_has_a_default_log_level_defined_by_active_merchant
+    assert_equal Logger::WARN, LitleOnline::Configuration.logger.level
+  end
+
+  def test_configured_logger_respects_any_custom_log_level_set_without_overwriting_it
+    with_litle_configuration_restoration do
+      assert_equal Logger::WARN, LitleOnline::Configuration.logger.level
+
+      LitleOnline::Configuration.logger.level = Logger::DEBUG
+
+      LitleGateway.new({:merchant_id=>'101', :user=>'active', :password=>'merchant', :version=>'8.10', :url=>'https://www.testlitle.com/sandbox/communicator/online'})
+      assert_equal Logger::WARN, LitleOnline::Configuration.logger.level
+    end
+  end
+
+  def test_that_setting_a_wiredump_device_on_the_gateway_sets_the_little_logger_upon_instantiation
+    with_litle_configuration_restoration do
+      logger = Logger.new(STDOUT)
+      ActiveMerchant::Billing::LitleGateway.wiredump_device = logger
+
+      # The gem was already configured in the setup method above
+      assert_not_equal logger, LitleOnline::Configuration.logger
+
+      # The initialize call will setup the logger for the gem
+      LitleGateway.new({:merchant_id=>'101', :user=>'active', :password=>'merchant', :version=>'8.10', :url=>'https://www.testlitle.com/sandbox/communicator/online'})
+      assert_equal logger, LitleOnline::Configuration.logger
+      assert_equal Logger::DEBUG, LitleOnline::Configuration.logger.level
+    end
+  end
+
+  def test_deprecated_credit
+    @gateway.expects(:refund).returns true
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
+      assert response = @gateway.credit(0, '123')
+    end
+  end
+
+  def test_refund_should_not_error_on_customer_reference_length
+    return_object = {
+      'response' => '0',
+      'creditResponse' => {
+        'response'    => '000',
+        'message'     => 'pass',
+        'litleTxnId'  =>'123456789012345678'
+      }
+    }
+    LitleOnline::Communications.expects(:http_post => return_object.to_xml(:root => 'litleOnlineResponse'))
+    response = @gateway.refund(0, "1234;credit", {:description => 'A lengthy refund description'})
+    assert response.success?
+  end
+
+  private
+
+  def with_litle_configuration_restoration(&block)
+    # Remember the wiredump device since we may overwrite it
+    existing_wiredump_device = ActiveMerchant::Billing::LitleGateway.wiredump_device
+
+    yield
+
+    # Restore the wiredump device
+    ActiveMerchant::Billing::LitleGateway.wiredump_device = existing_wiredump_device
+
+    # Reset the Litle logger
+    LitleOnline::Configuration.logger = nil
+  end
 end
