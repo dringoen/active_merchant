@@ -46,6 +46,7 @@ module ActiveMerchant #:nodoc:
         add_payment_source(post, creditcard,options)
         add_address(post, creditcard, options)
         add_customer_data(post, options)
+        add_descriptor(post, options)
         add_order_info(post, options)
         
         commit(options[:no_authorize] ? nil : 'auth', money, post)
@@ -57,7 +58,9 @@ module ActiveMerchant #:nodoc:
         add_payment_source(post, payment_source, options)
         add_address(post, payment_source, options)
         add_customer_data(post, options)
+        add_descriptor(post, options)
         add_order_info(post, options)
+        Rails.logger.error "Inspire Purchase post descriptor #{post.to_json}"
              
         commit('sale', money, post)
       end
@@ -192,6 +195,10 @@ module ActiveMerchant #:nodoc:
         post[:orderdescription]  = options[:orderdescription]
         post[:shipping_company]  = options[:shipping_company]
         post[:shipping_lastname] = options[:shipping_lastname]
+      end
+
+      def add_descriptor(post, options)
+        post[:descriptor] = options[:descriptor] if options[:descriptor]
       end
 
       def parse(body)
