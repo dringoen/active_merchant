@@ -198,7 +198,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def add_descriptor(post, options)
-        post[:descriptor] = options[:descriptor] if options[:descriptor]
+        desc = options && options[:descriptor] || @options && @options[:descriptor]
+        post[:descriptor] = desc if desc
       end
 
       def parse(body)
