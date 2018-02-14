@@ -51,7 +51,7 @@ module ActiveMerchant #:nodoc:
       #   (3(d1 + d4 + d7) + 7(d2 + d5 + d8) + 1(d3 + d6 + d9))mod 10 = 0
       # See http://en.wikipedia.org/wiki/Routing_transit_number#Internal_checksums
       def valid_routing_number?
-        d = routing_number.to_s.split('').map(&:to_i).select { |d| (0..9).include?(d) }
+        d = routing_number.to_s.split('').map(&:to_i).select { |d_select| (0..9).include?(d_select) }
         case d.size
           when 9 then
             checksum = ((3 * (d[0] + d[3] + d[6])) +
