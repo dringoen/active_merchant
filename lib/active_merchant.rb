@@ -28,7 +28,9 @@ require 'active_support/core_ext/hash/conversions'
 require 'active_support/core_ext/object/conversions'
 require 'active_support/core_ext/class/attribute'
 require 'active_support/core_ext/class/attribute_accessors'
-require 'active_support/core_ext/class/delegating_attributes'
+if Rails.version < "5.0.0"
+  require 'active_support/core_ext/class/delegating_attributes'
+end
 require 'active_support/core_ext/module/attribute_accessors'
 
 begin
