@@ -20,8 +20,8 @@ module ActiveMerchant #:nodoc:
 
       class_attribute :test_url, :live_url
 
-      self.test_url = "https://secure.metricsglobalgateway.com/gateway/transact.dll?testing=true"
-      self.live_url = "https://secure.metricsglobalgateway.com/gateway/transact.dll"
+      self.test_url = 'https://secure.metricsglobalgateway.com/gateway/transact.dll?testing=true'
+      self.live_url = 'https://secure.metricsglobalgateway.com/gateway/transact.dll'
 
       class_attribute :duplicate_window
 
@@ -150,7 +150,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, identification, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, identification, options)
       end
 
@@ -213,14 +213,14 @@ module ActiveMerchant #:nodoc:
         post[:version]        = API_VERSION
         post[:login]          = @options[:login]
         post[:tran_key]       = @options[:password]
-        post[:relay_response] = "FALSE"
+        post[:relay_response] = 'FALSE'
         post[:type]           = action
-        post[:delim_data]     = "TRUE"
-        post[:delim_char]     = ","
-        post[:encap_char]     = "$"
-        post[:solution_ID]    = application_id if application_id.present? && application_id != "ActiveMerchant"
+        post[:delim_data]     = 'TRUE'
+        post[:delim_char]     = ','
+        post[:encap_char]     = '$'
+        post[:solution_ID]    = application_id if application_id
 
-        request = post.merge(parameters).collect { |key, value| "x_#{key}=#{CGI.escape(value.to_s)}" }.join("&")
+        request = post.merge(parameters).collect { |key, value| "x_#{key}=#{CGI.escape(value.to_s)}" }.join('&')
         request
       end
 
@@ -284,39 +284,20 @@ module ActiveMerchant #:nodoc:
         end
       end
 
-      # Make a ruby type out of the response string
-      def normalize(field)
-        case field
-        when "true"   then true
-        when "false"  then false
-        when ""       then nil
-        when "null"   then nil
-        else field
-        end
-      end
-
       def message_from(results)
         if results[:response_code] == DECLINED
-          return CVVResult.messages[ results[:card_code] ] if CARD_CODE_ERRORS.include?(results[:card_code])
+          return CVVResult.messages[results[:card_code]] if CARD_CODE_ERRORS.include?(results[:card_code])
           if AVS_REASON_CODES.include?(results[:response_reason_code]) && AVS_ERRORS.include?(results[:avs_result_code])
-            return AVSResult.messages[ results[:avs_result_code] ]
+            return AVSResult.messages[results[:avs_result_code]]
           end
         end
 
         (results[:response_reason_text] ? results[:response_reason_text].chomp('.') : '')
       end
 
-      def expdate(creditcard)
-        year  = sprintf("%.4i", creditcard.year)
-        month = sprintf("%.2i", creditcard.month)
-
-        "#{month}#{year[-2..-1]}"
-      end
-
       def split(response)
         response[1..-2].split(/\$,\$/)
       end
-
     end
   end
 end

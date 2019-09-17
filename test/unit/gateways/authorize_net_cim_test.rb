@@ -1,6 +1,8 @@
 require 'test_helper'
 
 class AuthorizeNetCimTest < Test::Unit::TestCase
+  include CommStub
+
   def setup
     @gateway = AuthorizeNetCimGateway.new(
       :login => 'X',
@@ -44,8 +46,8 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
   end
 
   def test_expdate_formatting
-    assert_equal '2009-09', @gateway.send(:expdate, credit_card('4111111111111111', :month => "9", :year => "2009"))
-    assert_equal '2013-11', @gateway.send(:expdate, credit_card('4111111111111111', :month => "11", :year => "2013"))
+    assert_equal '2009-09', @gateway.send(:expdate, credit_card('4111111111111111', :month => '9', :year => '2009'))
+    assert_equal '2013-11', @gateway.send(:expdate, credit_card('4111111111111111', :month => '11', :year => '2013'))
     assert_equal 'XXXX', @gateway.send(:expdate, credit_card('XXXX1234', :month => nil, :year => nil))
   end
 
@@ -56,7 +58,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_instance_of Response, response
     assert_success response
     assert_equal @customer_profile_id, response.authorization
-    assert_equal "Successful.", response.message
+    assert_equal 'Successful.', response.message
   end
 
   def test_should_create_customer_payment_profile_request
@@ -74,7 +76,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_instance_of Response, response
     assert_success response
     assert_equal @customer_payment_profile_id, response.params['customer_payment_profile_id']
-    assert_equal "This output is only present if the ValidationMode input parameter is passed with a value of testMode or liveMode", response.params['validation_direct_response']
+    assert_equal 'This output is only present if the ValidationMode input parameter is passed with a value of testMode or liveMode', response.params['validation_direct_response']
   end
 
   def test_should_create_customer_shipping_address_request
@@ -260,7 +262,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
     assert_equal 'auth_capture', response.params['direct_response']['transaction_type']
-    assert_equal 'CSYM0K', approval_code = response.params['direct_response']['approval_code']
+    assert_equal 'CSYM0K', response.params['direct_response']['approval_code']
     assert_equal '2163585627', response.params['direct_response']['transaction_id']
 
     assert_equal '1', response.params['direct_response']['response_code']
@@ -389,12 +391,14 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
 
     assert response = @gateway.get_customer_payment_profile(
       :customer_profile_id => @customer_profile_id,
-      :customer_payment_profile_id => @customer_payment_profile_id
+      :customer_payment_profile_id => @customer_payment_profile_id,
+      :unmask_expiration_date => true
     )
     assert_instance_of Response, response
     assert_success response
     assert_nil response.authorization
     assert_equal @customer_payment_profile_id, response.params['profile']['payment_profiles']['customer_payment_profile_id']
+    assert_equal formatted_expiration_date(@credit_card), response.params['profile']['payment_profiles']['payment']['credit_card']['expiration_date']
   end
 
   def test_should_get_customer_shipping_address_request
@@ -433,6 +437,30 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
         :customer_type => 'business'
       }
     )
+    assert_instance_of Response, response
+    assert_success response
+    assert_nil response.authorization
+  end
+
+  def test_should_update_customer_payment_profile_request_with_last_four_digits
+    last_four_credit_card = ActiveMerchant::Billing::CreditCard.new(:number => '4242') # Credit card with only last four digits
+
+    response = stub_comms do
+      @gateway.update_customer_payment_profile(
+        :customer_profile_id => @customer_profile_id,
+        :payment_profile => {
+          :customer_payment_profile_id => @customer_payment_profile_id,
+          :bill_to => address(:address1 => '345 Avenue B',
+                              :address2 => 'Apt 101'),
+          :payment => {
+            :credit_card => last_four_credit_card
+          }
+        }
+      )
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<cardNumber>XXXX4242</cardNumber>}, data
+    end.respond_with(successful_update_customer_payment_profile_response)
+
     assert_instance_of Response, response
     assert_success response
     assert_nil response.authorization
@@ -504,6 +532,8 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     # http://www.modernbill.com/support/manual/old/v4/adminhelp/english/Configuration/Payment_Settings/Gateway_API/AuthorizeNet/Module_Authorize.net.htm
     assert_failure response
     assert_equal 'The referenced transaction does not meet the criteria for issuing a credit.', response.params['direct_response']['message']
+    assert_equal 'The transaction was unsuccessful.', response.message
+    assert_equal 'E00027', response.error_code
     return response
   end
 
@@ -568,14 +598,65 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert response = @gateway.create_customer_profile_transaction_for_refund(
       :transaction => {
         :trans_id => 1,
-        :amount => "1.00",
-        :credit_card_number_masked => "XXXX1234"
+        :amount => '1.00',
+        :credit_card_number_masked => 'XXXX1234'
         }
     )
     assert_instance_of Response, response
     assert_success response
     assert_equal response.authorization, response.params['direct_response']['transaction_id']
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
+  end
+
+  def test_should_create_customer_profile_transaction_passing_recurring_flag
+    response = stub_comms do
+      @gateway.create_customer_profile_transaction(
+        :transaction => {
+          :customer_profile_id => @customer_profile_id,
+          :customer_payment_profile_id => @customer_payment_profile_id,
+          :type => :auth_capture,
+          :order => {
+            :invoice_number => '1234',
+            :description => 'Test Order Description',
+            :purchase_order_number => '4321'
+          },
+          :amount => @amount,
+          :card_code => '123',
+          :recurring_billing => true
+        }
+      )
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<recurringBilling>true</recurringBilling>}, data
+    end.respond_with(successful_create_customer_profile_transaction_response(:auth_capture))
+
+    assert_instance_of Response, response
+    assert_success response
+    assert_equal 'M', response.params['direct_response']['card_code'] # M => match
+    assert_equal response.authorization, response.params['direct_response']['transaction_id']
+    assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
+  end
+
+  def test_full_or_masked_card_number
+    assert_equal nil, @gateway.send(:full_or_masked_card_number, nil)
+    assert_equal '', @gateway.send(:full_or_masked_card_number, '')
+    assert_equal '4242424242424242', @gateway.send(:full_or_masked_card_number, @credit_card.number)
+    assert_equal 'XXXX1234', @gateway.send(:full_or_masked_card_number, '1234')
+  end
+
+  def test_multiple_errors_when_creating_customer_profile
+    @gateway.expects(:ssl_post).returns(unsuccessful_create_customer_profile_transaction_response_with_multiple_errors(:refund))
+    assert response = @gateway.create_customer_profile_transaction(
+      :transaction => {
+        :type => :refund,
+        :amount => 1,
+
+        :customer_profile_id => @customer_profile_id,
+        :customer_payment_profile_id => @customer_payment_profile_id,
+        :trans_id => 1
+      }
+    )
+    assert_equal 'The transaction was unsuccessful.', response.message
+    assert_equal 'E00027', response.error_code
   end
 
   private
@@ -596,7 +677,7 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     assert_nil response.authorization
     assert_equal 'This transaction has been approved.', response.params['direct_response']['message']
     assert_equal 'auth_only', response.params['direct_response']['transaction_type']
-    assert_equal 'Gw4NGI', approval_code = response.params['direct_response']['approval_code']
+    assert_equal 'Gw4NGI', response.params['direct_response']['approval_code']
     return response
   end
 
@@ -1016,4 +1097,26 @@ class AuthorizeNetCimTest < Test::Unit::TestCase
     XML
   end
 
+  def unsuccessful_create_customer_profile_transaction_response_with_multiple_errors(transaction_type)
+    <<-XML
+      <?xml version="1.0" encoding="utf-8"?>
+      <createCustomerProfileTransactionResponse
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        xmlns="AnetApi/xml/v1/schema/AnetApiSchema.xsd">
+        <messages>
+          <resultCode>Error</resultCode>
+          <message>
+            <code>E00027</code>
+            <text>The transaction was unsuccessful.</text>
+          </message>
+          <message>
+            <code>E00001</code>
+            <text>An error occurred during processing. Please try again.</text>
+          </message>
+        </messages>
+        <directResponse>#{UNSUCCESSUL_DIRECT_RESPONSE[transaction_type]}</directResponse>
+      </createCustomerProfileTransactionResponse>
+    XML
+  end
 end

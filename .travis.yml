@@ -1,24 +1,33 @@
+language: ruby
+sudo: false
+cache: bundler
+
 rvm:
-  - 2.0.0
-  - 1.9.3
-  - 1.9.2
+- 2.5
+- 2.4
+- 2.3
 
 gemfile:
-  - Gemfile
-  - Gemfile_rails31
-  - Gemfile_rails30
-  - Gemfile_rails23
+- gemfiles/Gemfile.rails52
+- gemfiles/Gemfile.rails51
+- gemfiles/Gemfile.rails50
+- gemfiles/Gemfile.rails42
+- gemfiles/Gemfile.rails_master
 
-script: "bundle exec rake test:units"
+jobs:
+  include:
+      rvm: 2.5
+      gemfile: Gemfile
+      script: bundle exec rubocop --parallel
+
+matrix:
+  exclude:
+    - rvm: 2.3
+      gemfile: 'gemfiles/Gemfile.rails_master'
+    - rvm: 2.4
+      gemfile: 'gemfiles/Gemfile.rails_master'
 
 notifications:
   email:
-    - integrations-team@shopify.com
-    - nathaniel@talbott.ws
-
-matrix:
-  include:
-    - rvm: 2.0.0
-      gemfile: Gemfile_rails40
-    - rvm: 1.9.3
-      gemfile: Gemfile_rails40
+    on_success: never
+    on_failure: always

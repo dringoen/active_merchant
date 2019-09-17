@@ -1,6 +1,9 @@
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     module CreditCardFormatting
+      def expdate(credit_card)
+        "#{format(credit_card.month, :two_digits)}#{format(credit_card.year, :two_digits)}"
+      end
 
       # This method is used to format numerical information pertaining to credit cards.
       #
@@ -10,12 +13,11 @@ module ActiveMerchant #:nodoc:
         return '' if number.blank?
 
         case option
-          when :two_digits  ; sprintf("%.2i", number.to_i)[-2..-1]
-          when :four_digits ; sprintf("%.4i", number.to_i)[-4..-1]
-          else number
+        when :two_digits  then sprintf('%.2i', number.to_i)[-2..-1]
+        when :four_digits then sprintf('%.4i', number.to_i)[-4..-1]
+        else number
         end
       end
-
     end
   end
 end

@@ -9,25 +9,24 @@ class EfsnetTest < Test::Unit::TestCase
     )
 
     @credit_card = credit_card('4242424242424242')
-    @amount = 100    
+    @amount = 100
     @options = { :order_id => 1, :billing_address => address }
   end
-  
+
   def test_successful_purchase
     @gateway.expects(:ssl_post).returns(successful_purchase_response)
-    
+
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_instance_of Response, response
     assert_success response
     assert response.test?
     assert_equal '100018347764;1.00', response.authorization
     assert_equal 'Approved', response.message
-    
   end
 
   def test_unsuccessful_purchase
     @gateway.expects(:ssl_post).returns(unsuccessful_purchase_response)
-    
+
     assert response = @gateway.purchase(@amount, @credit_card, @options)
     assert_instance_of Response, response
     assert_failure response
@@ -36,62 +35,63 @@ class EfsnetTest < Test::Unit::TestCase
   end
 
   def test_credit
-    @gateway.expects(:ssl_post).with(anything, regexp_matches(/AccountNumber>#{@credit_card.number}<\/AccountNumber/), anything).returns("")
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/AccountNumber>#{@credit_card.number}<\/AccountNumber/), anything).returns('')
     @gateway.credit(@amount, @credit_card, :order_id => 5)
   end
 
   def test_deprecated_credit
-    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<OriginalTransactionID>transaction_id<\/OriginalTransactionID>/), anything).returns("")
-    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE, @gateway) do
-      @gateway.credit(@amount, "transaction_id", :order_id => 5)
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<OriginalTransactionID>transaction_id<\/OriginalTransactionID>/), anything).returns('')
+    assert_deprecation_warning(Gateway::CREDIT_DEPRECATION_MESSAGE) do
+      @gateway.credit(@amount, 'transaction_id', :order_id => 5)
     end
   end
 
   def test_refund
-    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<OriginalTransactionID>transaction_id<\/OriginalTransactionID>/), anything).returns("")
-    @gateway.refund(@amount, "transaction_id", :order_id => 5)
+    @gateway.expects(:ssl_post).with(anything, regexp_matches(/<OriginalTransactionID>transaction_id<\/OriginalTransactionID>/), anything).returns('')
+    @gateway.refund(@amount, 'transaction_id', :order_id => 5)
   end
 
   def test_authorize_is_valid_xml
     params = {
-      :order_id => "order1",
-      :transaction_amount => "1.01",
-      :account_number => "4242424242424242",
-      :expiration_month => "12",
-      :expiration_year => "2029",
+      :order_id => 'order1',
+      :transaction_amount => '1.01',
+      :account_number => '4242424242424242',
+      :expiration_month => '12',
+      :expiration_year => '2029',
     }
-    
+
     assert data = @gateway.send(:post_data, :credit_card_authorize, params)
     assert REXML::Document.new(data)
   end
 
   def test_settle_is_valid_xml
     params = {
-      :order_id => "order1",
-      :transaction_amount => "1.01",
-      :original_transaction_amount => "1.01",
-      :original_transaction_id => "1",
+      :order_id => 'order1',
+      :transaction_amount => '1.01',
+      :original_transaction_amount => '1.01',
+      :original_transaction_id => '1',
     }
-    
+
     assert data = @gateway.send(:post_data, :credit_card_settle, params)
     assert REXML::Document.new(data)
   end
-  
+
   def test_avs_result
     @gateway.expects(:ssl_post).returns(successful_purchase_response)
-    
+
     response = @gateway.purchase(@amount, @credit_card, @options)
     assert_equal 'N', response.avs_result['code']
   end
-  
+
   def test_cvv_result
     @gateway.expects(:ssl_post).returns(successful_purchase_response)
-    
+
     response = @gateway.purchase(@amount, @credit_card, @options)
     assert_equal 'M', response.cvv_result['code']
   end
-  
+
   private
+
   def successful_purchase_response
     <<-XML
 <?xml version="1.0"?>
@@ -114,7 +114,7 @@ class EfsnetTest < Test::Unit::TestCase
 </Reply>
     XML
   end
-  
+
   def unsuccessful_purchase_response
     <<-XML
 <?xml version="1.0"?>

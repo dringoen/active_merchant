@@ -1,6 +1,6 @@
-require File.dirname(__FILE__) + '/paypal/paypal_common_api'
-require File.dirname(__FILE__) + '/paypal/paypal_express_response'
-require File.dirname(__FILE__) + '/paypal_express_common'
+require 'active_merchant/billing/gateways/paypal/paypal_common_api'
+require 'active_merchant/billing/gateways/paypal/paypal_express_response'
+require 'active_merchant/billing/gateways/paypal_express_common'
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -11,9 +11,10 @@ module ActiveMerchant #:nodoc:
       self.supported_countries = %w(AU CA CN FI GB ID IN IT MY NO NZ PH PL SE SG TH VN)
       self.homepage_url = 'https://www.x.com/community/ppx/xspaces/digital_goods'
       self.display_name = 'PayPal Express Checkout for Digital Goods'
-      
+
       def redirect_url_for(token, options = {})
-        "#{redirect_url}?token=#{token}&useraction=commit"
+        options[:review] ||= false
+        super
       end
 
       # GATEWAY.setup_purchase(100,
@@ -29,7 +30,7 @@ module ActiveMerchant #:nodoc:
       #                            :category => "Digital" } ] )
       def build_setup_request(action, money, options)
         requires!(options, :items)
-        raise ArgumentError, "Must include at least 1 Item" unless options[:items].length > 0
+        raise ArgumentError, 'Must include at least 1 Item' unless options[:items].length > 0
         options[:items].each do |item|
           requires!(item, :name, :number, :quantity, :amount, :description, :category)
           raise ArgumentError, "Each of the items must have the category 'Digital'" unless item[:category] == 'Digital'

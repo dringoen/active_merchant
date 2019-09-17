@@ -1,4 +1,4 @@
-require File.dirname(__FILE__) + '/beanstream/beanstream_core'
+require 'active_merchant/billing/gateways/beanstream/beanstream_core'
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -16,7 +16,10 @@ module ActiveMerchant #:nodoc:
     # BeanStream supports payment profiles (vaults). This allows you to store cc information with BeanStream and process subsequent transactions with a customer id.
     # Secure Payment Profiles must be enabled on your account (must be done over the phone).
     # Your API Access Passcode must be set in Administration => account settings => order settings.
-    # To learn more about storing credit cards with the Beanstream gateway, please read the BEAN_Payment_Profiles.pdf (I had to phone BeanStream to request it.)
+    # To learn more about storing credit cards with the Beanstream gateway, documentation can be found at http://developer.beanstream.com/documentation/classic-apis
+    #
+    # To store a credit card using Beanstream's Legato Javascript Library (http://developer.beanstream.com/documentation/legato) you must pass the singleUseToken in
+    # the store method's option parameter. Example: @gateway.store("gt6-0c78c25b-3637-4ba0-90e2-26105287f198")
     #
     # == Notes
     # * Adding of order products information is not implemented.
@@ -72,6 +75,7 @@ module ActiveMerchant #:nodoc:
         add_address(post, options)
         add_transaction_type(post, :authorization)
         add_customer_ip(post, options)
+        add_recurring_payment(post, options)
         commit(post)
       end
 
@@ -83,6 +87,7 @@ module ActiveMerchant #:nodoc:
         add_address(post, options)
         add_transaction_type(post, purchase_action(source))
         add_customer_ip(post, options)
+        add_recurring_payment(post, options)
         commit(post)
       end
 
@@ -96,7 +101,20 @@ module ActiveMerchant #:nodoc:
         commit(post)
       end
 
+      def verify(source, options={})
+        MultiResponse.run(:use_first_response) do |r|
+          r.process { authorize(100, source, options) }
+          r.process(:ignore_result) { void(r.authorization, options) }
+        end
+      end
+
+      def success?(response)
+        response[:trnApproved] == '1' || response[:responseCode] == '1'
+      end
+
       def recurring(money, source, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         post = {}
         add_amount(post, money)
         add_invoice(post, options)
@@ -108,6 +126,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def update_recurring(amount, source, options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         post = {}
         add_recurring_amount(post, amount)
         add_recurring_invoice(post, options)
@@ -119,6 +139,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def cancel_recurring(options = {})
+        ActiveMerchant.deprecated RECURRING_DEPRECATION_MESSAGE
+
         post = {}
         add_recurring_operation_type(post, :cancel)
         add_recurring_service(post, options)
@@ -131,18 +153,26 @@ module ActiveMerchant #:nodoc:
 
       # To match the other stored-value gateways, like TrustCommerce,
       # store and unstore need to be defined
-      def store(credit_card, options = {})
+      #
+      # When passing a single-use token the :name option is required
+      def store(payment_method, options = {})
         post = {}
         add_address(post, options)
-        add_credit_card(post, credit_card)
-        add_secure_profile_variables(post,options)
+
+        if payment_method.respond_to?(:number)
+          add_credit_card(post, payment_method)
+        else
+          post[:singleUseToken] = payment_method
+        end
+        add_secure_profile_variables(post, options)
+
         commit(post, true)
       end
 
-      #can't actually delete a secure profile with the supplicated API. This function sets the status of the profile to closed (C).
-      #Closed profiles will have to removed manually.
+      # can't actually delete a secure profile with the supplicated API. This function sets the status of the profile to closed (C).
+      # Closed profiles will have to removed manually.
       def delete(vault_id)
-        update(vault_id, false, {:status => "C"})
+        update(vault_id, false, {:status => 'C'})
       end
 
       alias_method :unstore, :delete
@@ -150,20 +180,38 @@ module ActiveMerchant #:nodoc:
       # Update the values (such as CC expiration) stored at
       # the gateway.  The CC number must be supplied in the
       # CreditCard object.
-      def update(vault_id, credit_card, options = {})
+      def update(vault_id, payment_method, options = {})
         post = {}
         add_address(post, options)
-        add_credit_card(post, credit_card)
-        options.merge!({:vault_id => vault_id, :operation => secure_profile_action(:modify)})
-        add_secure_profile_variables(post,options)
+        if payment_method.respond_to?(:number)
+          add_credit_card(post, payment_method)
+        else
+          post[:singleUseToken] = payment_method
+        end
+        options[:vault_id] = vault_id
+        options[:operation] = secure_profile_action(:modify)
+        add_secure_profile_variables(post, options)
         commit(post, true)
       end
 
+      def supports_scrubbing?
+        true
+      end
+
+      def scrub(transcript)
+        transcript.
+          gsub(%r((Authorization: Basic )\w+), '\1[FILTERED]').
+          gsub(/(&?password=)[^&\s]*(&?)/, '\1[FILTERED]\2').
+          gsub(/(&?passcode=)[^&\s]*(&?)/, '\1[FILTERED]\2').
+          gsub(/(&?trnCardCvd=)\d*(&?)/, '\1[FILTERED]\2').
+          gsub(/(&?trnCardNumber=)\d*(&?)/, '\1[FILTERED]\2')
+      end
+
       private
+
       def build_response(*args)
         Response.new(*args)
       end
     end
   end
 end
-

@@ -58,7 +58,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def credit(money, authorization, options = {})
-        deprecated CREDIT_DEPRECATION_MESSAGE
+        ActiveMerchant.deprecated CREDIT_DEPRECATION_MESSAGE
         refund(money, authorization, options)
       end
 
@@ -107,12 +107,6 @@ module ActiveMerchant #:nodoc:
         post[:cvv] = creditcard.verification_value
       end
 
-      def expdate(creditcard)
-        year  = sprintf("%.4i", creditcard.year)
-        month = sprintf("%.2i", creditcard.month)
-        "#{month}#{year[-2..-1]}"
-      end
-
       def parse(body)
         body.split('&').inject({}) do |memo, x|
           k, v = x.split('=')
@@ -126,7 +120,6 @@ module ActiveMerchant #:nodoc:
         data = ssl_post(self.live_url, post_data(action, parameters))
         response = parse(data)
         message = message_from(response)
-        test_mode = test?
 
         Response.new(success?(response), message, response,
           :test => test?,
@@ -141,17 +134,17 @@ module ActiveMerchant #:nodoc:
       end
 
       def test?
-        (@options[:login].eql?('demo')) && (@options[:password].eql?('password'))
+        @options[:login].eql?('demo') && @options[:password].eql?('password')
       end
 
       def message_from(response)
         case response['response'].to_i
         when APPROVED
-          "Transaction Approved"
+          'Transaction Approved'
         when DECLINED
-          "Transaction Declined"
+          'Transaction Declined'
         else
-          "Error in transaction data or system error"
+          'Error in transaction data or system error'
         end
       end
 
@@ -159,9 +152,8 @@ module ActiveMerchant #:nodoc:
         parameters[:type] = action
         parameters[:username] = @options[:login]
         parameters[:password] = @options[:password]
-        parameters.map{|k, v| "#{k}=#{CGI.escape(v.to_s)}"}.join('&')
+        parameters.map { |k, v| "#{k}=#{CGI.escape(v.to_s)}" }.join('&')
       end
     end
   end
 end
-

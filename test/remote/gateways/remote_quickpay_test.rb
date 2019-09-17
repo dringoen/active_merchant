@@ -56,7 +56,7 @@ class RemoteQuickpayTest < Test::Unit::TestCase
     assert response = @gateway.authorize(@amount, @visa_dankort, @options)
     assert_success response
     assert !response.authorization.blank?
-    assert_equal 'dankort', response.params['cardtype']
+    assert_equal 'visa-dk', response.params['cardtype']
   end
 
   def test_successful_visa_electron_authorization
@@ -174,22 +174,22 @@ class RemoteQuickpayTest < Test::Unit::TestCase
   end
 
   def test_successful_store_and_reference_purchase
-    assert store = @gateway.store(@visa, @options.merge(:description => "New subscription"))
+    assert store = @gateway.store(@visa, @options.merge(:description => 'New subscription'))
     assert_success store
     assert purchase = @gateway.purchase(@amount, store.authorization, @options.merge(:order_id => generate_unique_id[0...10]))
     assert_success purchase
   end
 
   def test_failed_store
-    assert store = @gateway.store(credit_card('400010001111222a'), @options.merge(:description => "New subscription"))
+    assert store = @gateway.store(credit_card('4'), @options.merge(:description => 'New subscription'))
     assert_failure store
-    assert_equal "Error in field: cardnumber", store.message
+    assert_equal 'Error in field: cardnumber', store.message
   end
 
   def test_invalid_login
     gateway = QuickpayGateway.new(
-        :login => '',
-        :password => ''
+      :login => '',
+      :password => ''
     )
     assert response = gateway.purchase(@amount, @visa, @options)
     assert_equal 'Invalid merchant id', response.message

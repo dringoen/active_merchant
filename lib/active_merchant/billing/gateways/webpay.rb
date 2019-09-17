@@ -14,14 +14,15 @@ module ActiveMerchant #:nodoc:
       self.display_name = 'WebPay'
 
       def capture(money, authorization, options = {})
-        post = {:amount => localized_amount(money)}
+        post = {}
+        add_amount(post, money, options)
         add_application_fee(post, options)
         commit(:post, "charges/#{CGI.escape(authorization)}/capture", post)
       end
 
       def refund(money, identification, options = {})
-        post = {:amount => localized_amount(money)}
-
+        post = {}
+        add_amount(post, money, options)
         MultiResponse.run do |r|
           r.process { commit(:post, "charges/#{CGI.escape(identification)}/refund", post, options) }
 
@@ -34,15 +35,6 @@ module ActiveMerchant #:nodoc:
 
       def refund_fee(identification, options, meta)
         raise NotImplementedError.new
-      end
-
-      def localized_amount(money, currency = self.default_currency)
-        non_fractional_currency?(currency) ? (amount(money).to_f / 100).floor : amount(money)
-      end
-
-      def add_amount(post, money, options)
-        post[:currency] = (options[:currency] || currency(money)).downcase
-        post[:amount] = localized_amount(money, post[:currency].upcase)
       end
 
       def add_customer(post, creditcard, options)
@@ -59,39 +51,45 @@ module ActiveMerchant #:nodoc:
           MultiResponse.run(:first) do |r|
             r.process { commit(:post, "customers/#{CGI.escape(options[:customer])}/", post, options) }
 
-            return r unless options[:set_default] and r.success? and !r.params["id"].blank?
+            return r unless options[:set_default] and r.success? and !r.params['id'].blank?
 
-            r.process { update_customer(options[:customer], :default_card => r.params["id"]) }
+            r.process { update_customer(options[:customer], :default_card => r.params['id']) }
           end
         else
           commit(:post, 'customers', post, options)
         end
       end
 
+      def update(customer_id, creditcard, options = {})
+        post = {}
+        add_creditcard(post, creditcard, options)
+        commit(:post, "customers/#{CGI.escape(customer_id)}", post, options)
+      end
+
+      private
+
+      def create_post_for_auth_or_purchase(money, creditcard, options)
+        stripe_post = super
+        stripe_post[:description] ||= stripe_post.delete(:metadata).try(:[], :email)
+        stripe_post
+      end
+
       def json_error(raw_response)
         msg = 'Invalid response received from the WebPay API.  Please contact support@webpay.jp if you continue to receive this message.'
         msg += "  (The raw response returned by the API was #{raw_response.inspect})"
         {
-          "error" => {
-            "message" => msg
+          'error' => {
+            'message' => msg
           }
         }
       end
 
       def headers(options = {})
-        @@ua ||= JSON.dump({
-          :bindings_version => ActiveMerchant::VERSION,
-          :lang => 'ruby',
-          :lang_version => "#{RUBY_VERSION} p#{RUBY_PATCHLEVEL} (#{RUBY_RELEASE_DATE})",
-          :platform => RUBY_PLATFORM,
-          :publisher => 'active_merchant'
-        })
-
         {
-          "Authorization" => "Basic " + Base64.encode64(@api_key.to_s + ":").strip,
-          "User-Agent" => "Webpay/v1 ActiveMerchantBindings/#{ActiveMerchant::VERSION}",
-          "X-Webpay-Client-User-Agent" => @@ua,
-          "X-Webpay-Client-User-Metadata" => {:ip => options[:ip]}.to_json
+          'Authorization' => 'Basic ' + Base64.encode64(@api_key.to_s + ':').strip,
+          'User-Agent' => "Webpay/v1 ActiveMerchantBindings/#{ActiveMerchant::VERSION}",
+          'X-Webpay-Client-User-Agent' => user_agent,
+          'X-Webpay-Client-User-Metadata' => {:ip => options[:ip]}.to_json
         }
       end
     end

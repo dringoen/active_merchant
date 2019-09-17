@@ -4,7 +4,6 @@ class PaypalTest < Test::Unit::TestCase
   include CommStub
 
   def setup
-    Base.mode = :test
     PaypalGateway.pem_file = nil
 
     @amount = 100
@@ -20,47 +19,85 @@ class PaypalTest < Test::Unit::TestCase
   end
 
   def test_no_ip_address
-    assert_raise(ArgumentError){ @gateway.purchase(@amount, @credit_card, :billing_address => address)}
+    assert_raise(ArgumentError) do
+      @gateway.purchase(@amount, @credit_card, :billing_address => address)
+    end
   end
 
   def test_recurring_requires_description
     @recurring_required_fields.delete(:description)
-    assert_raise(ArgumentError){ @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields)) }
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields))
+      end
+    end
   end
 
   def test_recurring_requires_start_date
     @recurring_required_fields.delete(:start_date)
-    assert_raise(ArgumentError){ @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields)) }
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields))
+      end
+    end
   end
 
   def test_recurring_requires_frequency
     @recurring_required_fields.delete(:frequency)
-    assert_raise(ArgumentError){ @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields)) }
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields))
+      end
+    end
   end
 
   def test_recurring_requires_period
     @recurring_required_fields.delete(:period)
-    assert_raise(ArgumentError){ @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields)) }
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.recurring(@amount, @credit_card, @options.merge(@recurring_required_fields))
+      end
+    end
   end
 
   def test_update_recurring_requires_profile_id
-    assert_raise(ArgumentError){ @gateway.update_recurring(:amount => 100)}
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.update_recurring(:amount => 100)
+      end
+    end
   end
 
   def test_cancel_recurring_requires_profile_id
-    assert_raise(ArgumentError){ @gateway.cancel_recurring(nil, :note => 'Note')}
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.cancel_recurring(nil, :note => 'Note')
+      end
+    end
   end
 
   def test_status_recurring_requires_profile_id
-    assert_raise(ArgumentError){ @gateway.status_recurring(nil, :note => 'Note')}
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.status_recurring(nil)
+      end
+    end
   end
 
   def test_suspend_recurring_requires_profile_id
-    assert_raise(ArgumentError){ @gateway.suspend_recurring(nil, :note => 'Note')}
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.suspend_recurring(nil, :note => 'Note')
+      end
+    end
   end
 
   def test_reactivate_recurring_requires_profile_id
-    assert_raise(ArgumentError){ @gateway.reactivate_recurring(nil, :note => 'Note')}
+    assert_raise(ArgumentError) do
+      assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+        @gateway.reactivate_recurring(nil, :note => 'Note')
+      end
+    end
   end
 
   def test_successful_purchase_with_auth_signature
@@ -117,6 +154,15 @@ class PaypalTest < Test::Unit::TestCase
     assert response.test?
   end
 
+  def test_descriptors_passed
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options.merge(soft_descriptor: 'Eggcellent', soft_descriptor_city: 'New York'))
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{<n2:SoftDescriptor>Eggcellent}, data)
+      assert_match(%r{<n2:SoftDescriptorCity>New York}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
   def test_reauthorization
     @gateway.expects(:ssl_post).returns(successful_reauthorization_response)
     response = @gateway.reauthorize(@amount, '32J876265E528623B')
@@ -134,20 +180,20 @@ class PaypalTest < Test::Unit::TestCase
   end
 
   def test_amount_style
-   assert_equal '10.34', @gateway.send(:amount, 1034)
+    assert_equal '10.34', @gateway.send(:amount, 1034)
 
-   assert_raise(ArgumentError) do
-     @gateway.send(:amount, '10.34')
-   end
+    assert_raise(ArgumentError) do
+      @gateway.send(:amount, '10.34')
+    end
   end
 
   def test_paypal_timeout_error
     @gateway.stubs(:ssl_post).returns(paypal_timeout_error_response)
     response = @gateway.purchase(@amount, @credit_card, @options)
-    assert_equal "SOAP-ENV:Server", response.params['faultcode']
-    assert_equal "Internal error", response.params['faultstring']
-    assert_equal "Timeout processing request", response.params['detail']
-    assert_equal "SOAP-ENV:Server: Internal error - Timeout processing request", response.message
+    assert_equal 'SOAP-ENV:Server', response.params['faultcode']
+    assert_equal 'Internal error', response.params['faultstring']
+    assert_equal 'Timeout processing request', response.params['detail']
+    assert_equal 'SOAP-ENV:Server: Internal error - Timeout processing request', response.message
   end
 
   def test_pem_file_accessor
@@ -173,7 +219,7 @@ class PaypalTest < Test::Unit::TestCase
   end
 
   def test_supported_countries
-    assert_equal ['US'], PaypalGateway.supported_countries
+    assert_equal ['CA', 'NZ', 'GB', 'US'], PaypalGateway.supported_countries
   end
 
   def test_supported_card_types
@@ -185,6 +231,32 @@ class PaypalTest < Test::Unit::TestCase
 
     xml = REXML::Document.new(@gateway.send(:build_sale_or_authorization_request, 'Test', @amount, @credit_card, {}))
     assert_equal 'ActiveMerchant_DC', REXML::XPath.first(xml, '//n2:ButtonSource').text
+  end
+
+  def test_button_source_via_credentials
+    PaypalGateway.application_id = 'ActiveMerchant_DC'
+    gateway = PaypalGateway.new(
+      login: 'cody',
+      password: 'test',
+      pem: 'PEM',
+      button_source: 'WOOHOO'
+    )
+
+    xml = REXML::Document.new(gateway.send(:build_sale_or_authorization_request, 'Test', @amount, @credit_card, {}))
+    assert_equal 'WOOHOO', REXML::XPath.first(xml, '//n2:ButtonSource').text
+  end
+
+  def test_button_source_via_credentials_with_no_application_id
+    PaypalGateway.application_id = nil
+    gateway = PaypalGateway.new(
+      login: 'cody',
+      password: 'test',
+      pem: 'PEM',
+      button_source: 'WOOHOO'
+    )
+
+    xml = REXML::Document.new(gateway.send(:build_sale_or_authorization_request, 'Test', @amount, @credit_card, {}))
+    assert_equal 'WOOHOO', REXML::XPath.first(xml, '//n2:ButtonSource').text
   end
 
   def test_item_total_shipping_handling_and_tax_not_included_unless_all_are_present
@@ -276,8 +348,8 @@ class PaypalTest < Test::Unit::TestCase
 
     response = @gateway.purchase(@amount, @credit_card, @options)
     assert_success response
-    assert_equal "SuccessWithWarning", response.params["ack"]
-    assert_equal "Payment Pending your review in Fraud Management Filters", response.message
+    assert_equal 'SuccessWithWarning', response.params['ack']
+    assert_equal 'Payment Pending your review in Fraud Management Filters', response.message
     assert response.fraud_review?
   end
 
@@ -286,7 +358,7 @@ class PaypalTest < Test::Unit::TestCase
 
     response = @gateway.capture(@amount, 'authorization')
     assert_failure response
-    assert_equal "Transaction must be accepted in Fraud Management Filters before capture.", response.message
+    assert_equal 'Transaction must be accepted in Fraud Management Filters before capture.', response.message
   end
 
   # This occurs when sufficient 3rd party API permissions are not present to make the call for the user
@@ -294,8 +366,8 @@ class PaypalTest < Test::Unit::TestCase
     @gateway.expects(:ssl_post).returns(authentication_failed_response)
     response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
-    assert_equal "10002", response.params["error_codes"]
-    assert_equal "You do not have permissions to make this API call", response.message
+    assert_equal '10002', response.params['error_codes']
+    assert_equal 'You do not have permissions to make this API call', response.message
   end
 
   def test_amount_format_for_jpy_currency
@@ -306,7 +378,9 @@ class PaypalTest < Test::Unit::TestCase
 
   def test_successful_create_profile
     @gateway.expects(:ssl_post).returns(successful_create_profile_paypal_response)
-    response = @gateway.recurring(@amount, @credit_card, :description => "some description", :start_date => Time.now, :frequency => 12, :period => 'Month')
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, @credit_card, :description => 'some description', :start_date => Time.now, :frequency => 12, :period => 'Month')
+    end
     assert_instance_of Response, response
     assert response.success?
     assert response.test?
@@ -316,7 +390,9 @@ class PaypalTest < Test::Unit::TestCase
 
   def test_failed_create_profile
     @gateway.expects(:ssl_post).returns(failed_create_profile_paypal_response)
-    response = @gateway.recurring(@amount, @credit_card, :description => "some description", :start_date => Time.now, :frequency => 12, :period => 'Month')
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.recurring(@amount, @credit_card, :description => 'some description', :start_date => Time.now, :frequency => 12, :period => 'Month')
+    end
     assert_instance_of Response, response
     assert !response.success?
     assert response.test?
@@ -327,42 +403,56 @@ class PaypalTest < Test::Unit::TestCase
   def test_update_recurring_delegation
     @gateway.expects(:build_change_profile_request).with('I-G7A2FF8V75JY', :amount => 200)
     @gateway.stubs(:commit)
-    @gateway.update_recurring(:profile_id => 'I-G7A2FF8V75JY', :amount => 200)
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.update_recurring(:profile_id => 'I-G7A2FF8V75JY', :amount => 200)
+    end
   end
 
   def test_update_recurring_response
     @gateway.expects(:ssl_post).returns(successful_update_recurring_payment_profile_response)
-    response = @gateway.update_recurring(:profile_id => 'I-G7A2FF8V75JY', :amount => 200)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.update_recurring(:profile_id => 'I-G7A2FF8V75JY', :amount => 200)
+    end
     assert response.success?
   end
 
   def test_cancel_recurring_delegation
     @gateway.expects(:build_manage_profile_request).with('I-G7A2FF8V75JY', 'Cancel', :note => 'A Note').returns(:cancel_request)
     @gateway.expects(:commit).with('ManageRecurringPaymentsProfileStatus', :cancel_request)
-    @gateway.cancel_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.cancel_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    end
   end
 
   def test_suspend_recurring_delegation
     @gateway.expects(:build_manage_profile_request).with('I-G7A2FF8V75JY', 'Suspend', :note => 'A Note').returns(:request)
     @gateway.expects(:commit).with('ManageRecurringPaymentsProfileStatus', :request)
-    @gateway.suspend_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.suspend_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    end
   end
 
   def test_reactivate_recurring_delegation
     @gateway.expects(:build_manage_profile_request).with('I-G7A2FF8V75JY', 'Reactivate', :note => 'A Note').returns(:request)
     @gateway.expects(:commit).with('ManageRecurringPaymentsProfileStatus', :request)
-    @gateway.reactivate_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.reactivate_recurring('I-G7A2FF8V75JY', :note => 'A Note')
+    end
   end
 
   def test_status_recurring_delegation
     @gateway.expects(:build_get_profile_details_request).with('I-G7A2FF8V75JY').returns(:request)
     @gateway.expects(:commit).with('GetRecurringPaymentsProfileDetails', :request)
-    @gateway.status_recurring('I-G7A2FF8V75JY')
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.status_recurring('I-G7A2FF8V75JY')
+    end
   end
 
   def test_status_recurring_response
-    @gateway.expects(:ssl_post).returns(succesful_get_recurring_payments_profile_response)
-    response = @gateway.status_recurring('I-M1L3RX91DPDD')
+    @gateway.expects(:ssl_post).returns(successful_get_recurring_payments_profile_response)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.status_recurring('I-M1L3RX91DPDD')
+    end
     assert response.success?
     assert_equal 'I-M1L3RX91DPDD', response.params['profile_id']
   end
@@ -370,38 +460,214 @@ class PaypalTest < Test::Unit::TestCase
   def test_bill_outstanding_amoung_delegation
     @gateway.expects(:build_bill_outstanding_amount).with('I-G7A2FF8V75JY', :amount => 400).returns(:request)
     @gateway.expects(:commit).with('BillOutstandingAmount', :request)
-    @gateway.bill_outstanding_amount('I-G7A2FF8V75JY', :amount => 400)
+    assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.bill_outstanding_amount('I-G7A2FF8V75JY', :amount => 400)
+    end
   end
 
   def test_bill_outstanding_amoung_response
     @gateway.expects(:ssl_post).returns(successful_bill_outstanding_amount)
-    response = @gateway.bill_outstanding_amount('I-G7A2FF8V75JY', :amount => 400)
+    response = assert_deprecation_warning(Gateway::RECURRING_DEPRECATION_MESSAGE) do
+      @gateway.bill_outstanding_amount('I-G7A2FF8V75JY', :amount => 400)
+    end
     assert response.success?
   end
 
   def test_mass_pay_transfer_recipient_types
-    response = stub_comms do
+    stub_comms do
       @gateway.transfer 1000, 'fred@example.com'
     end.check_request do |endpoint, data, headers|
       assert_no_match %r{ReceiverType}, data
     end.respond_with(successful_purchase_response)
 
-    response = stub_comms do
-      @gateway.transfer 1000, 'fred@example.com', :receiver_type => "EmailAddress"
+    stub_comms do
+      @gateway.transfer 1000, 'fred@example.com', :receiver_type => 'EmailAddress'
     end.check_request do |endpoint, data, headers|
       assert_match %r{<ReceiverType>EmailAddress</ReceiverType>}, data
       assert_match %r{<ReceiverEmail>fred@example\.com</ReceiverEmail>}, data
     end.respond_with(successful_purchase_response)
 
-    response = stub_comms do
-      @gateway.transfer 1000, 'fred@example.com', :receiver_type => "UserID"
+    stub_comms do
+      @gateway.transfer 1000, 'fred@example.com', :receiver_type => 'UserID'
     end.check_request do |endpoint, data, headers|
       assert_match %r{<ReceiverType>UserID</ReceiverType>}, data
       assert_match %r{<ReceiverID>fred@example\.com</ReceiverID>}, data
     end.respond_with(successful_purchase_response)
   end
 
+  def test_successful_verify
+    response = stub_comms do
+      @gateway.verify(@credit_card, @options)
+    end.respond_with(successful_zero_dollar_auth_response)
+    assert_success response
+    assert_equal 'This card authorization verification is not a payment transaction.', response.message
+    assert_equal '0.00', response.params['amount']
+  end
+
+  def test_failed_verify
+    response = stub_comms do
+      @gateway.verify(@credit_card, @options)
+    end.respond_with(failed_zero_dollar_auth_response)
+    assert_failure response
+    assert_match %r{This transaction cannot be processed}, response.message
+  end
+
+  def test_successful_verify_non_visa_mc
+    amex_card = credit_card('371449635398431', brand: nil, verification_value: '1234')
+    response = stub_comms do
+      @gateway.verify(amex_card, @options)
+    end.respond_with(successful_one_dollar_auth_response, successful_void_response)
+    assert_success response
+    assert_equal 'Success', response.message
+    assert_equal '1.00', response.params['amount']
+  end
+
+  def test_successful_verify_non_visa_mc_failed_void
+    amex_card = credit_card('371449635398431', brand: nil, verification_value: '1234')
+    response = stub_comms do
+      @gateway.verify(amex_card, @options)
+    end.respond_with(successful_one_dollar_auth_response, failed_void_response)
+    assert_success response
+    assert_equal 'Success', response.message
+    assert_equal '1.00', response.params['amount']
+  end
+
+  def test_failed_verify_non_visa_mc
+    amex_card = credit_card('371449635398431', brand: nil, verification_value: '1234')
+    response = stub_comms do
+      @gateway.verify(amex_card, @options)
+    end.respond_with(failed_one_dollar_auth_response, successful_void_response)
+    assert_failure response
+    assert_match %r{This transaction cannot be processed}, response.message
+    assert_equal '1.00', response.params['amount']
+  end
+
+  def test_scrub
+    assert_equal @gateway.scrub(pre_scrubbed), post_scrubbed
+  end
+
+  def test_supports_scrubbing?
+    assert @gateway.supports_scrubbing?
+  end
+
+  def test_includes_cvv_tag
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_match(%r{CVV2}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_blank_cvv_not_sent
+    @credit_card.verification_value = nil
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{CVV2}, data)
+    end.respond_with(successful_purchase_response)
+
+    @credit_card.verification_value = '  '
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options)
+    end.check_request do |endpoint, data, headers|
+      assert_no_match(%r{CVV2}, data)
+    end.respond_with(successful_purchase_response)
+  end
+
+  def test_card_declined
+    ['15005', '10754', '10752', '10759', '10761', '15002', '11084'].each do |error_code|
+      @gateway.expects(:ssl_request).returns(response_with_error_code(error_code))
+
+      response = @gateway.purchase(@amount, @credit_card, @options)
+      assertion_failed_message = "error_code #{error_code} should have been translated to :card_declined"
+      assert_equal(:card_declined, response.error_code, assertion_failed_message)
+    end
+  end
+
+  def test_incorrect_cvc
+    ['15004'].each do |error_code|
+      @gateway.expects(:ssl_request).returns(response_with_error_code(error_code))
+
+      response = @gateway.purchase(@amount, @credit_card, @options)
+      assertion_failed_message = "error_code #{error_code} should have been translated to :card_declined"
+      assert_equal(:incorrect_cvc, response.error_code, assertion_failed_message)
+    end
+  end
+
+  def test_invalid_cvc
+    ['10762'].each do |error_code|
+      @gateway.expects(:ssl_request).returns(response_with_error_code(error_code))
+
+      response = @gateway.purchase(@amount, @credit_card, @options)
+      assertion_failed_message = "error_code #{error_code} should have been translated to :card_declined"
+      assert_equal(:invalid_cvc, response.error_code, assertion_failed_message)
+    end
+  end
+
+  def test_error_code_with_no_mapping_returns_standardized_processing_error
+    @gateway.expects(:ssl_request).returns(response_with_error_code('999999'))
+
+    response = @gateway.purchase(@amount, @credit_card, @options)
+    assert_equal(:processing_error, response.error_code)
+  end
+
+  def test_3ds_version_1_request
+    stub_comms do
+      @gateway.purchase(@amount, @credit_card, @options.merge(three_d_secure_option))
+    end.check_request do |endpoint, data, headers|
+      assert_match %r{<n2:Version>124</n2:Version>}, data
+      assert_match %r{<AuthStatus3ds>Y</AuthStatus3ds>}, data
+      assert_match %r{<Cavv>cavv</Cavv>}, data
+      assert_match %r{<Eci3ds>eci</Eci3ds>}, data
+      assert_match %r{<Xid>xid</Xid>}, data
+    end.respond_with(successful_purchase_response)
+  end
+
   private
+
+  def pre_scrubbed
+    <<-PRE_SCRUBBED
+      opening connection to api-3t.sandbox.paypal.com:443...
+      opened
+      starting SSL for api-3t.sandbox.paypal.com:443...
+      SSL established
+      <- "POST /2.0/ HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nAccept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3\r\nAccept: */*\r\nUser-Agent: Ruby\r\nConnection: close\r\nHost: api-3t.sandbox.paypal.com\r\nContent-Length: 2229\r\n\r\n"
+      <- "<?xml version=\"1.0\" encoding=\"UTF-8\"?><env:Envelope xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><env:Header><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xmlns:n1=\"urn:ebay:apis:eBLBaseComponents\" env:mustUnderstand=\"0\"><n1:Credentials><n1:Username>activemerchant-test_api1.example.com</n1:Username><n1:Password>HBC6A84QLRWC923A</n1:Password><n1:Subject/><n1:Signature>AFcWxV21C7fd0v3bYYYRCpSSRl31AC-11AKBL8FFO9tjImL311y8a0hx</n1:Signature></n1:Credentials></RequesterCredentials></env:Header><env:Body><DoDirectPaymentReq xmlns=\"urn:ebay:api:PayPalAPI\">\n  <DoDirectPaymentRequest xmlns:n2=\"urn:ebay:apis:eBLBaseComponents\">\n    <n2:Version>72</n2:Version>\n    <n2:DoDirectPaymentRequestDetails>\n      <n2:PaymentAction>Sale</n2:PaymentAction>\n      <n2:PaymentDetails>\n        <n2:OrderTotal currencyID=\"USD\">1.00</n2:OrderTotal>\n        <n2:OrderDescription>Stuff that you purchased, yo!</n2:OrderDescription>\n        <n2:InvoiceID>70e472b155c61d27fe19555a96d51127</n2:InvoiceID>\n        <n2:ButtonSource>ActiveMerchant</n2:ButtonSource>\n      </n2:PaymentDetails>\n      <n2:CreditCard>\n        <n2:CreditCardType>Visa</n2:CreditCardType>\n        <n2:CreditCardNumber>4381258770269608</n2:CreditCardNumber>\n        <n2:ExpMonth>09</n2:ExpMonth>\n        <n2:ExpYear>2015</n2:ExpYear>\n        <n2:CVV2>123</n2:CVV2>\n        <n2:CardOwner>\n          <n2:PayerName>\n            <n2:FirstName>Longbob</n2:FirstName>\n            <n2:LastName>Longsen</n2:LastName>\n          </n2:PayerName>\n          <n2:Payer>buyer@jadedpallet.com</n2:Payer>\n          <n2:Address>\n            <n2:Name>Longbob Longsen</n2:Name>\n            <n2:Street1>1234 Penny Lane</n2:Street1>\n            <n2:Street2/>\n            <n2:CityName>Jonsetown</n2:CityName>\n            <n2:StateOrProvince>NC</n2:StateOrProvince>\n            <n2:Country>US</n2:Country>\n            <n2:PostalCode>23456</n2:PostalCode>\n          </n2:Address>\n        </n2:CardOwner>\n      </n2:CreditCard>\n      <n2:IPAddress>10.0.0.1</n2:IPAddress>\n    </n2:DoDirectPaymentRequestDetails>\n  </DoDirectPaymentRequest>\n</DoDirectPaymentReq>\n</env:Body></env:Envelope>"
+      -> "HTTP/1.1 200 OK\r\n"
+      -> "Date: Tue, 02 Dec 2014 18:44:21 GMT\r\n"
+      -> "Server: Apache\r\n"
+      -> "Content-Length: 1909\r\n"
+      -> "Connection: close\r\n"
+      -> "Content-Type: text/xml; charset=utf-8\r\n"
+      -> "\r\n"
+      reading 1909 bytes...
+      -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?><SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:cc=\"urn:ebay:apis:CoreComponentTypes\" xmlns:wsu=\"http://schemas.xmlsoap.org/ws/2002/07/utility\" xmlns:saml=\"urn:oasis:names:tc:SAML:1.0:assertion\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xmlns:ed=\"urn:ebay:apis:EnhancedDataTypes\" xmlns:ebl=\"urn:ebay:apis:eBLBaseComponents\" xmlns:ns=\"urn:ebay:api:PayPalAPI\"><SOAP-ENV:Header><Security xmlns=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xsi:type=\"wsse:SecurityType\"></Security><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xsi:type=\"ebl:CustomSecurityHeaderType\"><Credentials xmlns=\"urn:ebay:apis:eBLBaseComponents\" xsi:type=\"ebl:UserIdPasswordType\"><Username xsi:type=\"xs:string\"></Username><Password xsi:type=\"xs:string\"></Password><Signature xsi:type=\"xs:string\"></Signature><Subject xsi:type=\"xs:string\"></Subject></Credentials></RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id=\"_0\"><DoDirectPaymentResponse xmlns=\"urn:ebay:api:PayPalAPI\"><Timestamp xmlns=\"urn:ebay:apis:eBLBaseComponents\">2014-12-02T18:44:24Z</Timestamp><Ack xmlns=\"urn:ebay:apis:eBLBaseComponents\">Success</Ack><CorrelationID xmlns=\"urn:ebay:apis:eBLBaseComponents\">28804ee3a8eb7</CorrelationID><Version xmlns=\"urn:ebay:apis:eBLBaseComponents\">72</Version><Build xmlns=\"urn:ebay:apis:eBLBaseComponents\">13597118</Build><Amount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">1.00</Amount><AVSCode xsi:type=\"xs:string\">X</AVSCode><CVV2Code xsi:type=\"xs:string\">M</CVV2Code><TransactionID>38L91123G19597918</TransactionID></DoDirectPaymentResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>"
+      read 1909 bytes
+      Conn close
+    PRE_SCRUBBED
+  end
+
+  def post_scrubbed
+    <<-POST_SCRUBBED
+      opening connection to api-3t.sandbox.paypal.com:443...
+      opened
+      starting SSL for api-3t.sandbox.paypal.com:443...
+      SSL established
+      <- "POST /2.0/ HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nAccept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3\r\nAccept: */*\r\nUser-Agent: Ruby\r\nConnection: close\r\nHost: api-3t.sandbox.paypal.com\r\nContent-Length: 2229\r\n\r\n"
+      <- "<?xml version=\"1.0\" encoding=\"UTF-8\"?><env:Envelope xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><env:Header><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xmlns:n1=\"urn:ebay:apis:eBLBaseComponents\" env:mustUnderstand=\"0\"><n1:Credentials><n1:Username>[FILTERED]</n1:Username><n1:Password>[FILTERED]</n1:Password><n1:Subject/><n1:Signature>[FILTERED]</n1:Signature></n1:Credentials></RequesterCredentials></env:Header><env:Body><DoDirectPaymentReq xmlns=\"urn:ebay:api:PayPalAPI\">\n  <DoDirectPaymentRequest xmlns:n2=\"urn:ebay:apis:eBLBaseComponents\">\n    <n2:Version>72</n2:Version>\n    <n2:DoDirectPaymentRequestDetails>\n      <n2:PaymentAction>Sale</n2:PaymentAction>\n      <n2:PaymentDetails>\n        <n2:OrderTotal currencyID=\"USD\">1.00</n2:OrderTotal>\n        <n2:OrderDescription>Stuff that you purchased, yo!</n2:OrderDescription>\n        <n2:InvoiceID>70e472b155c61d27fe19555a96d51127</n2:InvoiceID>\n        <n2:ButtonSource>ActiveMerchant</n2:ButtonSource>\n      </n2:PaymentDetails>\n      <n2:CreditCard>\n        <n2:CreditCardType>Visa</n2:CreditCardType>\n        <n2:CreditCardNumber>[FILTERED]</n2:CreditCardNumber>\n        <n2:ExpMonth>09</n2:ExpMonth>\n        <n2:ExpYear>2015</n2:ExpYear>\n        <n2:CVV2>[FILTERED]</n2:CVV2>\n        <n2:CardOwner>\n          <n2:PayerName>\n            <n2:FirstName>Longbob</n2:FirstName>\n            <n2:LastName>Longsen</n2:LastName>\n          </n2:PayerName>\n          <n2:Payer>buyer@jadedpallet.com</n2:Payer>\n          <n2:Address>\n            <n2:Name>Longbob Longsen</n2:Name>\n            <n2:Street1>1234 Penny Lane</n2:Street1>\n            <n2:Street2/>\n            <n2:CityName>Jonsetown</n2:CityName>\n            <n2:StateOrProvince>NC</n2:StateOrProvince>\n            <n2:Country>US</n2:Country>\n            <n2:PostalCode>23456</n2:PostalCode>\n          </n2:Address>\n        </n2:CardOwner>\n      </n2:CreditCard>\n      <n2:IPAddress>10.0.0.1</n2:IPAddress>\n    </n2:DoDirectPaymentRequestDetails>\n  </DoDirectPaymentRequest>\n</DoDirectPaymentReq>\n</env:Body></env:Envelope>"
+      -> "HTTP/1.1 200 OK\r\n"
+      -> "Date: Tue, 02 Dec 2014 18:44:21 GMT\r\n"
+      -> "Server: Apache\r\n"
+      -> "Content-Length: 1909\r\n"
+      -> "Connection: close\r\n"
+      -> "Content-Type: text/xml; charset=utf-8\r\n"
+      -> "\r\n"
+      reading 1909 bytes...
+      -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?><SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:cc=\"urn:ebay:apis:CoreComponentTypes\" xmlns:wsu=\"http://schemas.xmlsoap.org/ws/2002/07/utility\" xmlns:saml=\"urn:oasis:names:tc:SAML:1.0:assertion\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xmlns:ed=\"urn:ebay:apis:EnhancedDataTypes\" xmlns:ebl=\"urn:ebay:apis:eBLBaseComponents\" xmlns:ns=\"urn:ebay:api:PayPalAPI\"><SOAP-ENV:Header><Security xmlns=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xsi:type=\"wsse:SecurityType\"></Security><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xsi:type=\"ebl:CustomSecurityHeaderType\"><Credentials xmlns=\"urn:ebay:apis:eBLBaseComponents\" xsi:type=\"ebl:UserIdPasswordType\"><Username xsi:type=\"xs:string\"></Username><Password xsi:type=\"xs:string\"></Password><Signature xsi:type=\"xs:string\"></Signature><Subject xsi:type=\"xs:string\"></Subject></Credentials></RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id=\"_0\"><DoDirectPaymentResponse xmlns=\"urn:ebay:api:PayPalAPI\"><Timestamp xmlns=\"urn:ebay:apis:eBLBaseComponents\">2014-12-02T18:44:24Z</Timestamp><Ack xmlns=\"urn:ebay:apis:eBLBaseComponents\">Success</Ack><CorrelationID xmlns=\"urn:ebay:apis:eBLBaseComponents\">28804ee3a8eb7</CorrelationID><Version xmlns=\"urn:ebay:apis:eBLBaseComponents\">72</Version><Build xmlns=\"urn:ebay:apis:eBLBaseComponents\">13597118</Build><Amount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">1.00</Amount><AVSCode xsi:type=\"xs:string\">X</AVSCode><CVV2Code xsi:type=\"xs:string\">M</CVV2Code><TransactionID>38L91123G19597918</TransactionID></DoDirectPaymentResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>"
+      read 1909 bytes
+      Conn close
+    POST_SCRUBBED
+  end
 
   def successful_purchase_response
     <<-RESPONSE
@@ -490,6 +756,244 @@ class PaypalTest < Test::Unit::TestCase
       <AVSCode xsi:type="xs:string">X</AVSCode>
       <CVV2Code xsi:type="xs:string">M</CVV2Code>
     </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def successful_zero_dollar_auth_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ns="urn:ebay:api:PayPalAPI">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType"></Security>
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string"> </Username>
+        <Password xsi:type="xs:string"></Password>
+        <Signature xsi:type="xs:string"> </Signature>
+        <Subject xsi:type="xs:string"> </Subject>
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoDirectPaymentResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:14:48Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">SuccessWithWarning</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">e33ce283dd3d3</CorrelationID>
+      <Errors xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:ErrorType">
+        <ShortMessage xsi:type="xs:string">Credit card verified.</ShortMessage>
+        <LongMessage xsi:type="xs:string">This card authorization verification is not a payment transaction.</LongMessage>
+        <ErrorCode xsi:type="xs:token">10574</ErrorCode>
+        <SeverityCode xmlns="urn:ebay:apis:eBLBaseComponents">Warning</SeverityCode>
+      </Errors>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11660982</Build>
+      <Amount xsi:type="cc:BasicAmountType" currencyID="USD">0.00</Amount>
+      <AVSCode xsi:type="xs:string">X</AVSCode><CVV2Code xsi:type="xs:string">M</CVV2Code>
+      <TransactionID>86D41672SH9764158</TransactionID>
+    </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def failed_zero_dollar_auth_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoDirectPaymentResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:25:51Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Failure</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">5dda14853a55d</CorrelationID>
+      <Errors xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:ErrorType">
+        <ShortMessage xsi:type="xs:string">Invalid Data</ShortMessage>
+        <LongMessage xsi:type="xs:string">This transaction cannot be processed. Please enter a valid credit card number and type.</LongMessage>
+        <ErrorCode xsi:type="xs:token">10527</ErrorCode>
+        <SeverityCode>Error</SeverityCode>
+      </Errors>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11660982</Build>
+      <Amount xsi:type="cc:BasicAmountType" currencyID="USD">0.00</Amount>
+    </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def successful_one_dollar_auth_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoDirectPaymentResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:39:40Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Success</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">814bcb1ced3d</CorrelationID>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11660982</Build>
+      <Amount xsi:type="cc:BasicAmountType" currencyID="USD">1.00</Amount>
+      <AVSCode xsi:type="xs:string">X</AVSCode>
+      <CVV2Code xsi:type="xs:string">M</CVV2Code>
+      <TransactionID>521683708W7313256</TransactionID>
+    </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def failed_one_dollar_auth_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoDirectPaymentResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:47:18Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Failure</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">f3ab2d6fc76e4</CorrelationID>
+      <Errors xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:ErrorType">
+        <ShortMessage xsi:type="xs:string">Invalid Data</ShortMessage>
+        <LongMessage xsi:type="xs:string">This transaction cannot be processed. Please enter a valid credit card number and type.</LongMessage>
+        <ErrorCode xsi:type="xs:token">10527</ErrorCode>
+        <SeverityCode>Error</SeverityCode>
+      </Errors>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11660982</Build>
+      <Amount xsi:type="cc:BasicAmountType" currencyID="USD">1.00</Amount>
+    </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def response_with_error_code(error_code)
+    <<-RESPONSE
+    <?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoDirectPaymentResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:47:18Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Failure</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">f3ab2d6fc76e4</CorrelationID>
+      <Errors xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:ErrorType">
+        <ShortMessage xsi:type="xs:string">Invalid Data</ShortMessage>
+        <LongMessage xsi:type="xs:string">This transaction cannot be processed. Please enter a valid credit card number and type.</LongMessage>
+        <ErrorCode xsi:type="xs:token">#{error_code}</ErrorCode>
+        <SeverityCode>Error</SeverityCode>
+      </Errors>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11660982</Build>
+      <Amount xsi:type="cc:BasicAmountType" currencyID="USD">1.00</Amount>
+    </DoDirectPaymentResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def successful_void_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoVoidResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:39:41Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Success</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">5c184c86a25bc</CorrelationID>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11624049</Build>
+      <AuthorizationID xsi:type="xs:string">521683708W7313256</AuthorizationID>
+    </DoVoidResponse>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+    RESPONSE
+  end
+
+  def failed_void_response
+    <<-RESPONSE
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:cc="urn:ebay:apis:CoreComponentTypes" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:ebl="urn:ebay:apis:eBLBaseComponents" xmlns:ed="urn:ebay:apis:EnhancedDataTypes" xmlns:ns="urn:ebay:api:PayPalAPI" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/12/secext" xmlns:wsu="http://schemas.xmlsoap.org/ws/2002/07/utility" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Header>
+    <Security xmlns="http://schemas.xmlsoap.org/ws/2002/12/secext" xsi:type="wsse:SecurityType" />
+    <RequesterCredentials xmlns="urn:ebay:api:PayPalAPI" xsi:type="ebl:CustomSecurityHeaderType">
+      <Credentials xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:UserIdPasswordType">
+        <Username xsi:type="xs:string" />
+        <Password xsi:type="xs:string" />
+        <Signature xsi:type="xs:string" />
+        <Subject xsi:type="xs:string" />
+      </Credentials>
+    </RequesterCredentials>
+  </SOAP-ENV:Header>
+  <SOAP-ENV:Body id="_0">
+    <DoVoidResponse xmlns="urn:ebay:api:PayPalAPI">
+      <Timestamp xmlns="urn:ebay:apis:eBLBaseComponents">2014-06-27T18:50:11Z</Timestamp>
+      <Ack xmlns="urn:ebay:apis:eBLBaseComponents">Failure</Ack>
+      <CorrelationID xmlns="urn:ebay:apis:eBLBaseComponents">e99444d222eaf</CorrelationID>
+      <Errors xmlns="urn:ebay:apis:eBLBaseComponents" xsi:type="ebl:ErrorType">
+        <ShortMessage xsi:type="xs:string">Transaction refused because of an invalid argument. See additional error messages for details.</ShortMessage>
+        <LongMessage xsi:type="xs:string">The transaction id is not valid</LongMessage>
+        <ErrorCode xsi:type="xs:token">10004</ErrorCode>
+        <SeverityCode>Error</SeverityCode>
+      </Errors>
+      <Version xmlns="urn:ebay:apis:eBLBaseComponents">72</Version>
+      <Build xmlns="urn:ebay:apis:eBLBaseComponents">11624049</Build>
+      <AuthorizationID xsi:type="xs:string" />
+    </DoVoidResponse>
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>
     RESPONSE
@@ -888,7 +1392,6 @@ class PaypalTest < Test::Unit::TestCase
     RESPONSE
   end
 
-
   def successful_update_recurring_payment_profile_response
     <<-RESPONSE
     <?xml version=\"1.0\" encoding=\"UTF-8\"?><SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:cc=\"urn:ebay:apis:CoreComponentTypes\" xmlns:wsu=\"http://schemas.xmlsoap.org/ws/2002/07/utility\" xmlns:saml=\"urn:oasis:names:tc:SAML:1.0:assertion\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xmlns:ed=\"urn:ebay:apis:EnhancedDataTypes\" xmlns:ebl=\"urn:ebay:apis:eBLBaseComponents\" xmlns:ns=\"urn:ebay:api:PayPalAPI\"><SOAP-ENV:Header><Security xmlns=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xsi:type=\"wsse:SecurityType\"></Security><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xsi:type=\"ebl:CustomSecurityHeaderType\"><Credentials xmlns=\"urn:ebay:apis:eBLBaseComponents\" xsi:type=\"ebl:UserIdPasswordType\"><Username xsi:type=\"xs:string\"></Username><Password xsi:type=\"xs:string\"></Password><Signature xsi:type=\"xs:string\"></Signature><Subject xsi:type=\"xs:string\"></Subject></Credentials></RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id=\"_0\">
@@ -920,9 +1423,20 @@ class PaypalTest < Test::Unit::TestCase
     RESPONSE
   end
 
-  def succesful_get_recurring_payments_profile_response
+  def successful_get_recurring_payments_profile_response
     <<-RESPONSE
     <?xml version=\"1.0\" encoding=\"UTF-8\"?><SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:cc=\"urn:ebay:apis:CoreComponentTypes\" xmlns:wsu=\"http://schemas.xmlsoap.org/ws/2002/07/utility\" xmlns:saml=\"urn:oasis:names:tc:SAML:1.0:assertion\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" xmlns:wsse=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xmlns:ed=\"urn:ebay:apis:EnhancedDataTypes\" xmlns:ebl=\"urn:ebay:apis:eBLBaseComponents\" xmlns:ns=\"urn:ebay:api:PayPalAPI\"><SOAP-ENV:Header><Security xmlns=\"http://schemas.xmlsoap.org/ws/2002/12/secext\" xsi:type=\"wsse:SecurityType\"></Security><RequesterCredentials xmlns=\"urn:ebay:api:PayPalAPI\" xsi:type=\"ebl:CustomSecurityHeaderType\"><Credentials xmlns=\"urn:ebay:apis:eBLBaseComponents\" xsi:type=\"ebl:UserIdPasswordType\"><Username xsi:type=\"xs:string\"></Username><Password xsi:type=\"xs:string\"></Password><Signature xsi:type=\"xs:string\"></Signature><Subject xsi:type=\"xs:string\"></Subject></Credentials></RequesterCredentials></SOAP-ENV:Header><SOAP-ENV:Body id=\"_0\"><GetRecurringPaymentsProfileDetailsResponse xmlns=\"urn:ebay:api:PayPalAPI\"><Timestamp xmlns=\"urn:ebay:apis:eBLBaseComponents\">2012-03-19T21:34:40Z</Timestamp><Ack xmlns=\"urn:ebay:apis:eBLBaseComponents\">Success</Ack><CorrelationID xmlns=\"urn:ebay:apis:eBLBaseComponents\">6f24b53c49232</CorrelationID><Version xmlns=\"urn:ebay:apis:eBLBaseComponents\">72</Version><Build xmlns=\"urn:ebay:apis:eBLBaseComponents\">2649250</Build><GetRecurringPaymentsProfileDetailsResponseDetails xmlns=\"urn:ebay:apis:eBLBaseComponents\" xsi:type=\"ebl:GetRecurringPaymentsProfileDetailsResponseDetailsType\"><ProfileID xsi:type=\"xs:string\">I-M1L3RX91DPDD</ProfileID><ProfileStatus xsi:type=\"ebl:RecurringPaymentsProfileStatusType\">CancelledProfile</ProfileStatus><Description xsi:type=\"xs:string\">A description</Description><AutoBillOutstandingAmount xsi:type=\"ebl:AutoBillType\">NoAutoBill</AutoBillOutstandingAmount><MaxFailedPayments>0</MaxFailedPayments><RecurringPaymentsProfileDetails xsi:type=\"ebl:RecurringPaymentsProfileDetailsType\"><SubscriberName xsi:type=\"xs:string\">Ryan Bates</SubscriberName><SubscriberShippingAddress xsi:type=\"ebl:AddressType\"><Name xsi:type=\"xs:string\"></Name><Street1 xsi:type=\"xs:string\"></Street1><Street2 xsi:type=\"xs:string\"></Street2><CityName xsi:type=\"xs:string\"></CityName><StateOrProvince xsi:type=\"xs:string\"></StateOrProvince><CountryName></CountryName><Phone xsi:type=\"xs:string\"></Phone><PostalCode xsi:type=\"xs:string\"></PostalCode><AddressID xsi:type=\"xs:string\"></AddressID><AddressOwner xsi:type=\"ebl:AddressOwnerCodeType\">PayPal</AddressOwner><ExternalAddressID xsi:type=\"xs:string\"></ExternalAddressID><AddressStatus xsi:type=\"ebl:AddressStatusCodeType\">Unconfirmed</AddressStatus></SubscriberShippingAddress><BillingStartDate xsi:type=\"xs:dateTime\">2012-03-19T11:00:00Z</BillingStartDate></RecurringPaymentsProfileDetails><CurrentRecurringPaymentsPeriod xsi:type=\"ebl:BillingPeriodDetailsType\"><BillingPeriod xsi:type=\"ebl:BillingPeriodTypeType\">Month</BillingPeriod><BillingFrequency>1</BillingFrequency><TotalBillingCycles>0</TotalBillingCycles><Amount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">1.23</Amount><ShippingAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</ShippingAmount><TaxAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</TaxAmount></CurrentRecurringPaymentsPeriod><RecurringPaymentsSummary xsi:type=\"ebl:RecurringPaymentsSummaryType\"><NumberCyclesCompleted>1</NumberCyclesCompleted><NumberCyclesRemaining>-1</NumberCyclesRemaining><OutstandingBalance xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">1.23</OutstandingBalance><FailedPaymentCount>1</FailedPaymentCount></RecurringPaymentsSummary><CreditCard xsi:type=\"ebl:CreditCardDetailsType\"><CreditCardType xsi:type=\"ebl:CreditCardTypeType\">Visa</CreditCardType><CreditCardNumber xsi:type=\"xs:string\">3576</CreditCardNumber><ExpMonth>1</ExpMonth><ExpYear>2013</ExpYear><CardOwner xsi:type=\"ebl:PayerInfoType\"><PayerStatus xsi:type=\"ebl:PayPalUserStatusCodeType\">unverified</PayerStatus><PayerName xsi:type=\"ebl:PersonNameType\"><FirstName xmlns=\"urn:ebay:apis:eBLBaseComponents\">Ryan</FirstName><LastName xmlns=\"urn:ebay:apis:eBLBaseComponents\">Bates</LastName></PayerName><Address xsi:type=\"ebl:AddressType\"><AddressOwner xsi:type=\"ebl:AddressOwnerCodeType\">PayPal</AddressOwner><AddressStatus xsi:type=\"ebl:AddressStatusCodeType\">Unconfirmed</AddressStatus></Address></CardOwner><StartMonth>0</StartMonth><StartYear>0</StartYear><ThreeDSecureRequest xsi:type=\"ebl:ThreeDSecureRequestType\"></ThreeDSecureRequest></CreditCard><RegularRecurringPaymentsPeriod xsi:type=\"ebl:BillingPeriodDetailsType\"><BillingPeriod xsi:type=\"ebl:BillingPeriodTypeType\">Month</BillingPeriod><BillingFrequency>1</BillingFrequency><TotalBillingCycles>0</TotalBillingCycles><Amount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">1.23</Amount><ShippingAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</ShippingAmount><TaxAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</TaxAmount></RegularRecurringPaymentsPeriod><TrialAmountPaid xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</TrialAmountPaid><RegularAmountPaid xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</RegularAmountPaid><AggregateAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</AggregateAmount><AggregateOptionalAmount xsi:type=\"cc:BasicAmountType\" currencyID=\"USD\">0.00</AggregateOptionalAmount><FinalPaymentDueDate xsi:type=\"xs:dateTime\">1970-01-01T00:00:00Z</FinalPaymentDueDate></GetRecurringPaymentsProfileDetailsResponseDetails></GetRecurringPaymentsProfileDetailsResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
     RESPONSE
+  end
+
+  def three_d_secure_option
+    {
+        three_d_secure: {
+            trans_status: 'Y',
+            eci: 'eci',
+            cavv: 'cavv',
+            xid: 'xid'
+        }
+    }
   end
 end

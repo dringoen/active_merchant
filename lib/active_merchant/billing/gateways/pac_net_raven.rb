@@ -1,15 +1,39 @@
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
     class PacNetRavenGateway < Gateway
-      self.test_url = 'https://demo.deepcovelabs.com/realtime/'
-      self.live_url = 'https://raven.pacnetservices.com/realtime/'
+
+      AVS_ADDRESS_CODES = {
+        'avs_address_unavailable'   => 'X',
+        'avs_address_not_checked'   => 'X',
+        'avs_address_matched'       => 'Y',
+        'avs_address_not_matched'   => 'N',
+        'avs_address_partial_match' => 'N'
+      }
+
+      AVS_POSTAL_CODES = {
+        'avs_postal_unavailable'   => 'X',
+        'avs_postal_not_checked'   => 'X',
+        'avs_postal_matched'       => 'Y',
+        'avs_postal_not_matched'   => 'N',
+        'avs_postal_partial_match' => 'N'
+      }
+
+      CVV2_CODES = {
+        'cvv2_matched'     => 'Y',
+        'cvv2_not_matched' => 'N',
+        'cvv2_unavailable' => 'X',
+        'cvv2_not_checked' => 'X'
+      }
+
+      self.live_url = 'https://raven.deepcovelabs.net/realtime/'
+      self.test_url = self.live_url
 
       self.supported_countries = ['US']
-      self.supported_cardtypes = [:visa, :master, :american_express, :discover]
+      self.supported_cardtypes = [:visa, :master]
       self.money_format = :cents
       self.default_currency = 'USD'
-      self.homepage_url = 'http://www.pacnetservices.com/'
-      self.display_name = 'Raven PacNet'
+      self.homepage_url = 'https://www.deepcovelabs.com/raven'
+      self.display_name = 'Raven'
 
       def initialize(options = {})
         requires!(options, :user, :secret, :prn)
@@ -39,7 +63,7 @@ module ActiveMerchant #:nodoc:
       def void(authorization, options = {})
         post = {}
         post['TrackingNumber'] = authorization
-        post['PymtType'] = options[:pymt_type] || 'cc_debit'
+        post['PymtType'] = options[:pymt_type]
 
         commit('void', nil, post)
       end
@@ -83,7 +107,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def parse(body)
-        Hash[body.split('&').map{|x| x.split('=').map{|x| CGI.unescape(x)}}]
+        Hash[body.split('&').map { |x| x.split('=').map { |y| CGI.unescape(y) } }]
       end
 
       def commit(action, money, parameters)
@@ -102,8 +126,11 @@ module ActiveMerchant #:nodoc:
           :test => test_mode,
           :authorization => response['TrackingNumber'],
           :fraud_review => fraud_review?(response),
-          :avs_result => { :postal_match => response['AVSPostalResponseCode'], :street_match => response['AVSAddressResponseCode'] },
-          :cvv_result => response['CVV2ResponseCode']
+          :avs_result => {
+                          :postal_match => AVS_POSTAL_CODES[response['AVSPostalResponseCode']],
+                          :street_match => AVS_ADDRESS_CODES[response['AVSAddressResponseCode']]
+                         },
+          :cvv_result => CVV2_CODES[response['CVV2ResponseCode']]
         )
       end
 
@@ -132,11 +159,11 @@ module ActiveMerchant #:nodoc:
         return response['Message'] if response['Message']
 
         if response['Status'] == 'Approved'
-          "This transaction has been approved"
+          'This transaction has been approved'
         elsif response['Status'] == 'Declined'
-          "This transaction has been declined"
+          'This transaction has been declined'
         elsif response['Status'] == 'Voided'
-          "This transaction has been voided"
+          'This transaction has been voided'
         else
           response['Status']
         end
@@ -152,36 +179,28 @@ module ActiveMerchant #:nodoc:
         post['RequestID']     = request_id
         post['Signature']     = signature(action, post, parameters)
 
-        request = post.merge(parameters).collect { |key, value| "#{key}=#{CGI.escape(value.to_s)}" }.join("&")
+        request = post.merge(parameters).collect { |key, value| "#{key}=#{CGI.escape(value.to_s)}" }.join('&')
         request
       end
 
       def timestamp
-        Time.now.strftime("%Y-%m-%dT%H:%M:%S.Z")
+        Time.now.strftime('%Y-%m-%dT%H:%M:%S.Z')
       end
 
       def request_id
-        (0...21).map{(65+rand(26)).chr}.join.downcase
+        SecureRandom.uuid
       end
 
       def signature(action, post, parameters = {})
         string = if %w(cc_settle cc_debit cc_preauth cc_refund).include?(action)
-          post['UserName'] + post['Timestamp'] + post['RequestID'] + post['PymtType'] + parameters['Amount'].to_s + parameters['Currency']
-        elsif action == 'void'
-          post['UserName'] + post['Timestamp'] + post['RequestID'] + parameters['TrackingNumber']
-        else
-          post['UserName']
+                   post['UserName'] + post['Timestamp'] + post['RequestID'] + post['PymtType'] + parameters['Amount'].to_s + parameters['Currency']
+                 elsif action == 'void'
+                   post['UserName'] + post['Timestamp'] + post['RequestID'] + parameters['TrackingNumber']
+                 else
+                   post['UserName']
         end
-        Digest::HMAC.hexdigest(string, @options[:secret], Digest::SHA1)
-      end
-
-      def expdate(creditcard)
-        year  = sprintf("%.4i", creditcard.year)
-        month = sprintf("%.2i", creditcard.month)
-
-        "#{month}#{year[-2..-1]}"
+        OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA1.new(@options[:secret]), @options[:secret], string)
       end
     end
   end
 end
-
